@@ -859,30 +859,38 @@ export function PreviewExport({
                 <Settings className="w-4 h-4" />
                 API Settings
               </Button>
+            <div className="flex flex-col gap-3 w-full max-w-md">
               <Button
                 onClick={handleExport}
                 size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
               >
                 <Download className="w-5 h-5" />
                 Export as ZIP
               </Button>
-              <Button
-                onClick={handleVideoExport}
-                size="lg"
-                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 gap-2 text-lg px-8 py-6"
-              >
-                <Download className="w-5 h-5" />
-                Export Video (json2video)
-              </Button>
+              
               <Button
                 onClick={handleFFmpegExport}
                 size="lg"
-                className="bg-gradient-to-r from-green-600 to-teal-600 text-white hover:from-green-700 hover:to-teal-700 gap-2 text-lg px-8 py-6"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
               >
                 <Download className="w-5 h-5" />
-                Export Video (FFmpeg)
+                Export as Video
               </Button>
+              
+              <Button
+                onClick={handleVideoExport}
+                size="lg"
+                disabled
+                className="bg-gray-300 text-gray-500 cursor-not-allowed gap-2 text-lg px-8 py-6 relative w-full"
+              >
+                <Download className="w-5 h-5" />
+                Export Video (json2video)
+                <span className="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full font-semibold">
+                  In Progress
+                </span>
+              </Button>
+            </div>
             </div>
           </div>
         )}
