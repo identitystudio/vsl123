@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { VslProject } from '@/types';
 import type { User } from '@supabase/supabase-js';
@@ -12,12 +12,14 @@ export function useProjects() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const prevUserIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     // Get initial user session
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
       setIsReady(true);
+      prevUserIdRef.current = data.user?.id;
     });
 
     // Listen for auth state changes
@@ -25,8 +27,9 @@ export function useProjects() {
       const newUser = session?.user ?? null;
       
       // If user changed (different ID or logged out), invalidate cache
-      if (user?.id !== newUser?.id) {
+      if (prevUserIdRef.current !== newUser?.id) {
         queryClient.invalidateQueries({ queryKey: ['projects'] });
+        prevUserIdRef.current = newUser?.id;
       }
       
       setUser(newUser);
@@ -36,7 +39,7 @@ export function useProjects() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [user?.id, queryClient]);
+  }, [queryClient]);
 
   return useQuery({
     queryKey: ['projects'],
