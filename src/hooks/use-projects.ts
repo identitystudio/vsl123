@@ -1,14 +1,38 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { VslProject } from '@/types';
+import type { User } from '@supabase/supabase-js';
 
 const supabase = createClient();
 
 export function useProjects() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // Get initial user session
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      setIsReady(true);
+    });
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsReady(true);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   return useQuery({
     queryKey: ['projects'],
+    enabled: isReady && !!user, // Only run when user is confirmed
     queryFn: async () => {
       const { data, error } = await supabase
         .from('vsl_projects')
