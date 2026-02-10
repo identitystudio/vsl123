@@ -10,30 +10,28 @@ const supabase = createClient();
 
 export function useProjects() {
   const queryClient = useQueryClient();
-  const [user, setUser] = useState<User | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const prevUserIdRef = useRef<string | undefined>(undefined);
+  const [userId, setUserId] = useState<string | null>(null);
+  const prevUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Get initial user session
     supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setIsReady(true);
-      prevUserIdRef.current = data.user?.id;
+      const newUserId = data.user?.id ?? null;
+      setUserId(newUserId);
+      prevUserIdRef.current = newUserId;
     });
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const newUser = session?.user ?? null;
+      const newUserId = session?.user?.id ?? null;
       
-      // If user changed (different ID or logged out), invalidate cache
-      if (prevUserIdRef.current !== newUser?.id) {
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
-        prevUserIdRef.current = newUser?.id;
+      // If user changed, invalidate and refetch
+      if (prevUserIdRef.current !== newUserId) {
+        queryClient.resetQueries({ queryKey: ['projects'] });
+        prevUserIdRef.current = newUserId;
       }
       
-      setUser(newUser);
-      setIsReady(true);
+      setUserId(newUserId);
     });
 
     return () => {
@@ -42,9 +40,10 @@ export function useProjects() {
   }, [queryClient]);
 
   return useQuery({
-    queryKey: ['projects'],
-    enabled: isReady && !!user, // Only run when user is confirmed
+    queryKey: ['projects', userId],
     queryFn: async () => {
+      if (!userId) return [];
+      
       const { data, error } = await supabase
         .from('vsl_projects')
         .select('*')
