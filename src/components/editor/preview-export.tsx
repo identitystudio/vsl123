@@ -972,18 +972,8 @@ export function PreviewExport({
                 className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
               >
                 <Download className="w-5 h-5" />
-                Export as ZIP
+                Export as ZIP(via Api)
               </Button>
-              
-              <Button
-                onClick={handleFFmpegExport}
-                size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
-              >
-                <Download className="w-5 h-5" />
-                Export as Video
-              </Button>
-
               <Button
                 onClick={handleFFmpegZipExport}
                 size="lg"
@@ -992,6 +982,16 @@ export function PreviewExport({
                 <Download className="w-5 h-5" />
                 Export as ZIP (via FFmpeg)
               </Button>
+              <Button
+                onClick={handleFFmpegExport}
+                size="lg"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
+              >
+                <Download className="w-5 h-5" />
+                Export as Video(via FFmpeg)
+              </Button>
+
+              
               
               <Button
                 onClick={handleVideoExport}
