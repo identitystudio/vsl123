@@ -84,53 +84,81 @@ export function PreviewExport({
 
     try {
       // Dynamic imports for export libraries
-      const html2canvasModule = await import('html2canvas');
-      const html2canvas = html2canvasModule.default;
+      const domtoimage = (await import('dom-to-image-more')).default;
       const JSZip = (await import('jszip')).default;
 
       const zip = new JSZip();
 
       for (let i = 0; i < slides.length; i++) {
-        // Create off-screen render div
+        // Create off-screen render div with explicit hex colors
         const container = document.createElement('div');
-        container.style.width = '1920px';
-        container.style.height = '1080px';
-        container.style.position = 'fixed';
-        container.style.left = '-9999px';
-        container.style.top = '0';
-        container.style.backgroundColor =
-          slides[i].style.background === 'dark' ? '#1a1a1a' : '#ffffff';
+        container.style.cssText = `
+          width: 1920px;
+          height: 1080px;
+          position: fixed;
+          left: -9999px;
+          top: 0;
+          background-color: ${slides[i].style.background === 'dark' ? '#1a1a1a' : '#ffffff'};
+          color: ${slides[i].style.textColor === 'white' ? '#ffffff' : '#1a1a1a'};
+          border: none;
+          font-family: system-ui, -apple-system, sans-serif;
+        `;
 
-        // Background image
+        // Background image - use img element with proper loading
         if (slides[i].backgroundImage?.url && slides[i].style.background === 'image') {
-          const bgDiv = document.createElement('div');
-          bgDiv.style.position = 'absolute';
-          bgDiv.style.inset = '0';
-          bgDiv.style.backgroundImage = `url(${slides[i].backgroundImage!.url})`;
-          bgDiv.style.backgroundSize = 'cover';
-          bgDiv.style.backgroundPosition = 'center';
-          bgDiv.style.opacity = String((slides[i].backgroundImage!.opacity || 40) / 100);
-          bgDiv.style.filter = `blur(${slides[i].backgroundImage!.blur || 8}px)`;
-          container.appendChild(bgDiv);
+          const bgImg = document.createElement('img');
+          bgImg.crossOrigin = 'anonymous';
+          bgImg.src = slides[i].backgroundImage!.url;
+          bgImg.style.cssText = `
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: ${(slides[i].backgroundImage!.opacity || 40) / 100};
+            filter: blur(${slides[i].backgroundImage!.blur || 8}px);
+          `;
+          
+          // Wait for image to load before proceeding
+          await new Promise((resolve, reject) => {
+            bgImg.onload = resolve;
+            bgImg.onerror = () => {
+              console.warn('Failed to load background image:', slides[i].backgroundImage!.url);
+              resolve(null); // Continue even if image fails
+            };
+            // Timeout after 5 seconds
+            setTimeout(() => resolve(null), 5000);
+          });
+          
+          container.appendChild(bgImg);
         }
 
         // Text
         const textDiv = document.createElement('div');
-        textDiv.style.position = 'relative';
-        textDiv.style.zIndex = '10';
-        textDiv.style.display = 'flex';
-        textDiv.style.alignItems = 'center';
-        textDiv.style.justifyContent = 'center';
-        textDiv.style.height = '100%';
-        textDiv.style.padding = '80px';
+        textDiv.style.cssText = `
+          position: relative;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          padding: 80px;
+          color: ${slides[i].style.textColor === 'white' ? '#ffffff' : '#1a1a1a'};
+          border-color: transparent;
+        `;
 
         const p = document.createElement('p');
-        p.style.fontSize = `${slides[i].style.textSize || 72}px`;
-        p.style.fontWeight = '700';
-        p.style.textAlign = 'center';
-        p.style.lineHeight = '1.15';
-        p.style.color =
-          slides[i].style.textColor === 'white' ? '#ffffff' : '#1a1a1a';
+        p.style.cssText = `
+          font-size: ${slides[i].style.textSize || 72}px;
+          font-weight: 700;
+          text-align: center;
+          line-height: 1.15;
+          color: ${slides[i].style.textColor === 'white' ? '#ffffff' : '#1a1a1a'};
+          background-color: transparent;
+          border-color: transparent;
+          margin: 0;
+          padding: 0;
+        `;
         p.textContent = slides[i].fullScriptText;
 
         textDiv.appendChild(p);
@@ -138,15 +166,11 @@ export function PreviewExport({
         document.body.appendChild(container);
 
         try {
-          const canvas = await html2canvas(container, {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: null,
+          const blob = await domtoimage.toBlob(container, {
+            width: 1920,
+            height: 1080,
+            cacheBust: true,
           });
-
-          const blob = await new Promise<Blob>((resolve) =>
-            canvas.toBlob((b) => resolve(b!), 'image/png')
-          );
 
           const paddedNum = String(i + 1).padStart(3, '0');
           zip.file(
