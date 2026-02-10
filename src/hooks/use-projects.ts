@@ -9,6 +9,7 @@ import type { User } from '@supabase/supabase-js';
 const supabase = createClient();
 
 export function useProjects() {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -21,14 +22,21 @@ export function useProjects() {
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const newUser = session?.user ?? null;
+      
+      // If user changed (different ID or logged out), invalidate cache
+      if (user?.id !== newUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+      }
+      
+      setUser(newUser);
       setIsReady(true);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [user?.id, queryClient]);
 
   return useQuery({
     queryKey: ['projects'],
