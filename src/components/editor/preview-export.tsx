@@ -696,6 +696,112 @@ export function PreviewExport({
     }
   };
 
+  const handleFFmpegZipExport = async () => {
+    if (exporting) return;
+
+    const userId = localStorage.getItem('hcti_user_id') || '980c1ea4-9361-4496-ba24-9246925be09f';
+    const apiKey = localStorage.getItem('hcti_api_key') || 'caa50ed6-9f01-4e12-8c57-28ce7cd51d14';
+
+    setExporting(true);
+    setExportProgress(0);
+
+    try {
+      toast.info('Starting ZIP export (FFmpeg pipeline)...');
+
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      // Collect assets
+      const slideImages: { blob: Blob; name: string }[] = [];
+      const slideAudios: { blob: Blob; name: string }[] = [];
+
+      for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+        
+        // --- Render Slide (Same logic as FFmpeg export) ---
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+        const container = document.createElement('div');
+        container.style.cssText = 'width: 1920px; height: 1080px;';
+        wrapper.appendChild(container);
+        document.body.appendChild(wrapper);
+
+        const React = await import('react');
+        const ReactDOM = await import('react-dom/client');
+        const root = ReactDOM.createRoot(container);
+        
+        await new Promise<void>((resolve) => {
+          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+          setTimeout(resolve, 2000); // Wait for images
+        });
+
+        const renderedElement = container.firstElementChild as HTMLElement;
+        if (!renderedElement) throw new Error('Failed to render slide');
+
+        const slideHtml = renderedElement.outerHTML;
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0;}body{width:1920px;height:1080px;overflow:hidden;}</style></head><body>${slideHtml}</body></html>`;
+
+        const response = await fetch('https://hcti.io/v1/image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic ' + btoa(`${userId}:${apiKey}`),
+          },
+          body: JSON.stringify({ html, viewport_width: 1920, viewport_height: 1080 }),
+        });
+
+        if (!response.ok) throw new Error('Failed to render slide image');
+        const result = await response.json();
+        
+        const imgResponse = await fetch(result.url);
+        const imgBlob = await imgResponse.blob();
+        
+        const paddedNum = String(i + 1).padStart(3, '0');
+        slideImages.push({ blob: imgBlob, name: `${projectName.replace(/\s+/g, '_')}_${paddedNum}.png` });
+        
+        // --- Collect Audio ---
+        if (slide.audioUrl) {
+          const audioResponse = await fetch(slide.audioUrl);
+          const audioBlob = await audioResponse.blob();
+          slideAudios.push({ blob: audioBlob, name: `audio/${projectName.replace(/\s+/g, '_')}_${paddedNum}.mp3` });
+        }
+
+        root.unmount();
+        document.body.removeChild(wrapper);
+        setExportProgress(Math.round(((i + 1) / slides.length) * 80));
+      }
+
+      // --- Zip files ---
+      toast.info('Zipping files...');
+      
+      slideImages.forEach(img => {
+        zip.file(img.name, img.blob);
+      });
+      
+      slideAudios.forEach(audio => {
+        zip.file(audio.name, audio.blob);
+      });
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName.replace(/\s+/g, '_')}_FFmpeg_Pipeline.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setExportProgress(100);
+      toast.success('ZIP exported successfully!');
+
+    } catch (error) {
+      console.error('ZIP export error:', error);
+      toast.error(error instanceof Error ? error.message : 'ZIP export failed');
+    } finally {
+      setExporting(false);
+      setExportProgress(0);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex flex-col items-center gap-6">
@@ -876,6 +982,15 @@ export function PreviewExport({
               >
                 <Download className="w-5 h-5" />
                 Export as Video
+              </Button>
+
+              <Button
+                onClick={handleFFmpegZipExport}
+                size="lg"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
+              >
+                <Download className="w-5 h-5" />
+                Export as ZIP (via FFmpeg)
               </Button>
               
               <Button
