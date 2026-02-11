@@ -1,4 +1,4 @@
-import domtoimage from 'dom-to-image-more';
+import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -26,8 +26,6 @@ export async function exportSlidesToZipHtml2Canvas(
       container.style.top = '0';
       container.style.width = '1920px';
       container.style.height = '1080px';
-      // Important for dom-to-image to work correctly in hidden containers
-      container.style.overflow = 'hidden'; 
       document.body.appendChild(container);
 
       const root = ReactDOM.createRoot(container);
@@ -40,16 +38,46 @@ export async function exportSlidesToZipHtml2Canvas(
             scale: 3 
           })
         );
-        // Give it some time to render images/SVGs
+        // Give it some time to render images/SVGs and load fonts
         setTimeout(resolve, 2000);
       });
 
-      // Use dom-to-image-more which supports modern CSS (lab, oklch, etc.)
-      const blob = await domtoimage.toBlob(container, {
+      // Use html2canvas with a sanitizer to avoid modern color crashes
+      const canvas = await html2canvas(container, {
         width: 1920,
         height: 1080,
-        copyStyles: true,
+        scale: 1, // Already scaled in SlidePreview
+        useCORS: true,
+        logging: false,
+        backgroundColor: null,
+        onclone: (clonedDoc) => {
+          // Intercept and strip modern CSS colors (lab/oklch) that crash html2canvas
+          // These are common in Tailwind v4's default styles
+          const styleTags = Array.from(clonedDoc.getElementsByTagName('style'));
+          styleTags.forEach(tag => {
+            if (tag.textContent && (tag.textContent.includes('lab(') || tag.textContent.includes('oklch('))) {
+              tag.textContent = tag.textContent
+                .replace(/lab\([^)]+\)/g, 'transparent')
+                .replace(/oklch\([^)]+\)/g, 'transparent');
+            }
+          });
+
+          // Also check inline styles on all elements
+          const allElements = Array.from(clonedDoc.getElementsByTagName('*'));
+          allElements.forEach(el => {
+            const htmlEl = el as HTMLElement;
+            if (htmlEl.style.cssText && (htmlEl.style.cssText.includes('lab(') || htmlEl.style.cssText.includes('oklch('))) {
+              htmlEl.style.cssText = htmlEl.style.cssText
+                .replace(/lab\([^)]+\)/g, 'transparent')
+                .replace(/oklch\([^)]+\)/g, 'transparent');
+            }
+          });
+        }
       });
+
+      const blob = await new Promise<Blob | null>((resolve) => 
+        canvas.toBlob(resolve, 'image/png')
+      );
 
       if (blob) {
         zip.file(`${folderName}_${paddedNum}.png`, blob);
@@ -81,13 +109,13 @@ export async function exportSlidesToZipHtml2Canvas(
     // Download
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${folderName}_ZIP.zip`;
+    link.download = `${folderName}_Export.zip`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success('ZIP Export complete!');
+    toast.success('ZIP Export (clean text) complete!');
   } catch (error) {
     console.error('ZIP export error:', error);
     toast.error('Export failed. Check console for details.');
