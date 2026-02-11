@@ -1,4 +1,4 @@
-import html2canvas from 'html2canvas';
+import domtoimage from 'dom-to-image-more';
 import JSZip from 'jszip';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -24,9 +24,10 @@ export async function exportSlidesToZipHtml2Canvas(
       container.style.position = 'fixed';
       container.style.left = '-9999px';
       container.style.top = '0';
-      // Standard 1080p dimensions for rendering
       container.style.width = '1920px';
       container.style.height = '1080px';
+      // Important for dom-to-image to work correctly in hidden containers
+      container.style.overflow = 'hidden'; 
       document.body.appendChild(container);
 
       const root = ReactDOM.createRoot(container);
@@ -40,23 +41,15 @@ export async function exportSlidesToZipHtml2Canvas(
           })
         );
         // Give it some time to render images/SVGs
-        setTimeout(resolve, 1500);
+        setTimeout(resolve, 2000);
       });
 
-      // Capture with html2canvas
-      const canvas = await html2canvas(container, {
+      // Use dom-to-image-more which supports modern CSS (lab, oklch, etc.)
+      const blob = await domtoimage.toBlob(container, {
         width: 1920,
         height: 1080,
-        scale: 1, // Already scaled in SlidePreview
-        useCORS: true,
-        backgroundColor: null,
-        logging: false,
+        copyStyles: true,
       });
-
-      // Convert to blob
-      const blob = await new Promise<Blob | null>((resolve) => 
-        canvas.toBlob(resolve, 'image/png')
-      );
 
       if (blob) {
         zip.file(`${folderName}_${paddedNum}.png`, blob);
@@ -88,15 +81,15 @@ export async function exportSlidesToZipHtml2Canvas(
     // Download
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${folderName}_html2canvas.zip`;
+    link.download = `${folderName}_ZIP.zip`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success('ZIP Export (html2canvas) complete!');
+    toast.success('ZIP Export complete!');
   } catch (error) {
-    console.error('Html2canvas ZIP export error:', error);
+    console.error('ZIP export error:', error);
     toast.error('Export failed. Check console for details.');
     throw error;
   }
