@@ -16,11 +16,35 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { Slide } from '@/types';
 import { toast } from 'sonner';
+import { exportSlidesToZipHtml2Canvas } from '@/lib/export-html2canvas';
 
 interface PreviewExportProps {
   projectId: string;
   projectName: string;
   slides: Slide[];
+}
+
+// Helper to handle rate limiting with exponential backoff
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1000): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+    
+    // If rate limited (429) or server error (5xx), retry
+    if ((response.status === 429 || response.status >= 500) && retries > 0) {
+      console.log(`Request failed with ${response.status}. Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+    
+    return response;
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`Network error. Retrying in ${delay}ms...`, error);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+    throw error;
+  }
 }
 
 export function PreviewExport({
@@ -185,8 +209,11 @@ export function PreviewExport({
 
         console.log('Sending HTML to htmlcsstoimage (first 1000 chars):', html.substring(0, 1000));
 
+        // Add small delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 500));
+
         // Call htmlcsstoimage API
-        const response = await fetch('https://hcti.io/v1/image', {
+        const response = await fetchWithRetry('https://hcti.io/v1/image', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -305,7 +332,10 @@ export function PreviewExport({
         const slideHtml = renderedElement.outerHTML;
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0;}body{width:1920px;height:1080px;overflow:hidden;}</style></head><body>${slideHtml}</body></html>`;
 
-        const response = await fetch('https://hcti.io/v1/image', {
+        // Add small delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        
+        const response = await fetchWithRetry('https://hcti.io/v1/image', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -518,7 +548,10 @@ export function PreviewExport({
         const slideHtml = renderedElement.outerHTML;
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0;}body{width:1920px;height:1080px;overflow:hidden;}</style></head><body>${slideHtml}</body></html>`;
 
-        const response = await fetch('https://hcti.io/v1/image', {
+        // Add small delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        
+        const response = await fetchWithRetry('https://hcti.io/v1/image', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -741,7 +774,10 @@ export function PreviewExport({
         const slideHtml = renderedElement.outerHTML;
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0;}body{width:1920px;height:1080px;overflow:hidden;}</style></head><body>${slideHtml}</body></html>`;
 
-        const response = await fetch('https://hcti.io/v1/image', {
+        // Add small delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        
+        const response = await fetchWithRetry('https://hcti.io/v1/image', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -796,6 +832,22 @@ export function PreviewExport({
     } catch (error) {
       console.error('ZIP export error:', error);
       toast.error(error instanceof Error ? error.message : 'ZIP export failed');
+    } finally {
+      setExporting(false);
+      setExportProgress(0);
+    }
+  };
+
+  const handleHtml2CanvasZipExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportProgress(0);
+    try {
+      await exportSlidesToZipHtml2Canvas(slides, projectName, (progress) => {
+        setExportProgress(progress);
+      });
+    } catch (err) {
+      console.error(err);
     } finally {
       setExporting(false);
       setExportProgress(0);
@@ -981,6 +1033,14 @@ export function PreviewExport({
               >
                 <Download className="w-5 h-5" />
                 Export as ZIP (via FFmpeg)
+              </Button>
+              <Button
+                onClick={handleHtml2CanvasZipExport}
+                size="lg"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
+              >
+                <Download className="w-5 h-5" />
+                Export to ZIP (html2canvas)
               </Button>
               <Button
                 onClick={handleFFmpegExport}
