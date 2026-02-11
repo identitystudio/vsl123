@@ -12,6 +12,7 @@ import {
   Plus,
   Minus,
   BarChart3,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,11 +41,12 @@ import { toast } from 'sonner';
 interface SlideEditPanelProps {
   slide: Slide;
   onUpdate: (slide: Slide) => void;
-  onSave: () => void;
+  onSave: (applyToAll?: boolean) => void;
   onCancel: () => void;
   onApplyToAll?: () => void;
   headshotInputRef?: React.RefObject<HTMLInputElement | null>;
-  nextSlides?: Slide[]; // For infographic line bundling
+  allSlides?: Slide[];
+  currentIndex?: number;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -236,11 +238,14 @@ export function SlideEditPanel({
   onCancel,
   onApplyToAll,
   headshotInputRef,
-  nextSlides = [],
+  allSlides = [],
+  currentIndex = 0,
 }: SlideEditPanelProps) {
+  const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
   const [textValue, setTextValue] = useState(slide.fullScriptText);
   const [applyToAll, setApplyToAll] = useState(false);
+  const [showPreviewAll, setShowPreviewAll] = useState(false);
   const [aiImageOpen, setAiImageOpen] = useState(false);
   const [fetchingImage, setFetchingImage] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState('');
@@ -344,7 +349,7 @@ export function SlideEditPanel({
               sceneTitle: slide.sceneTitle,
               emotion: slide.emotion,
             },
-            nextSlides: nextSlides.slice(0, 10).map((s) => ({
+            nextSlides: nextSlides.slice(0, 10).map((s: Slide) => ({
               id: s.id,
               fullScriptText: s.fullScriptText,
               sceneTitle: s.sceneTitle,
@@ -618,10 +623,7 @@ export function SlideEditPanel({
   };
 
   const handleSaveAndNext = () => {
-    if (applyToAll && onApplyToAll) {
-      onApplyToAll();
-    }
-    onSave();
+    onSave(applyToAll);
   };
 
   const words = slide.fullScriptText.split(/\s+/);
@@ -1191,19 +1193,123 @@ export function SlideEditPanel({
         </div>
       )}
 
-      {/* Apply to all */}
+      {/* Apply to all Toggle */}
       <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="applyAll"
-          checked={applyToAll}
-          onChange={(e) => setApplyToAll(e.target.checked)}
-          className="rounded"
-        />
-        <label htmlFor="applyAll" className="text-sm text-gray-500">
-          Apply this style to all remaining slides
-        </label>
+        <button
+          onClick={() => setApplyToAll(!applyToAll)}
+          className="flex items-center gap-3 group px-1"
+          type="button"
+        >
+          <div 
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out ${
+              applyToAll ? 'bg-black' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                applyToAll ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </div>
+          <span className="text-sm font-semibold text-gray-700 group-hover:text-black transition-colors">
+            Apply style to all remaining
+          </span>
+        </button>
+
+        <div className="flex-1" />
+        
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowPreviewAll(!showPreviewAll)}
+          className={`gap-1.5 h-9 ${showPreviewAll ? 'bg-black text-white hover:bg-black/90' : 'border-gray-200'}`}
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          {showPreviewAll ? 'Hide Project View' : 'Preview project'}
+        </Button>
       </div>
+
+      {/* Grid Preview */}
+      {showPreviewAll && allSlides && (
+        <div className="pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-sm font-semibold">Project Slide Overview ({allSlides.length} slides)</h4>
+            <p className="text-xs text-gray-500">
+              {applyToAll ? 'Previewing with current style applied to remaining' : 'Previewing current slide states'}
+            </p>
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-[400px] overflow-y-auto p-2 bg-gray-50 rounded-lg thin-scrollbar">
+            {allSlides.map((s: Slide, idx: number) => {
+              // If applyToAll is checked and this slide is after current, preview with current style
+              const previewSlide = (applyToAll && idx > currentIndex) 
+                ? { 
+                    ...s, 
+                    style: { ...slide.style }, 
+                    hasBackgroundImage: slide.hasBackgroundImage,
+                    backgroundImage: slide.backgroundImage,
+                    headshot: slide.headshot,
+                    isInfographic: slide.isInfographic,
+                    infographicVisual: slide.infographicVisual,
+                    infographicCaptions: s.infographicCaptions || [s.fullScriptText]
+                  } 
+                : (idx === currentIndex ? slide : s);
+
+              return (
+                <div 
+                  key={s.id} 
+                  className={`relative aspect-video rounded border overflow-hidden bg-white group cursor-default ${
+                    idx === currentIndex ? 'ring-2 ring-black' : 'border-gray-200 shadow-sm'
+                  }`}
+                >
+                  <div className="absolute inset-0 scale-[0.14] origin-top-left w-[640px] h-[360px]">
+                    <div
+                      className="w-full h-full relative"
+                      style={{
+                        background: previewSlide.style.background === 'gradient' && previewSlide.style.gradient
+                          ? previewSlide.style.gradient
+                          : previewSlide.style.background === 'dark' ? '#1a1a1a' : '#ffffff',
+                      }}
+                    >
+                      {previewSlide.hasBackgroundImage && previewSlide.backgroundImage?.url && (
+                        <div 
+                          className="absolute inset-0 bg-cover bg-center"
+                          style={{ backgroundImage: `url(${previewSlide.backgroundImage.url})`, opacity: 0.6 }}
+                        />
+                      )}
+                      {previewSlide.style.background === 'split' && previewSlide.backgroundImage?.url && (
+                         <div 
+                          className="absolute top-0 left-0 right-0 bg-cover bg-center"
+                          style={{ 
+                            height: `${previewSlide.style.splitRatio || 50}%`,
+                            backgroundImage: `url(${previewSlide.backgroundImage.url})` 
+                          }}
+                        />
+                      )}
+                      
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div className="text-[32px] font-bold text-center leading-tight truncate-3-lines" style={{ color: previewSlide.style.textColor === 'white' ? 'white' : 'black' }}>
+                          {previewSlide.fullScriptText.length > 50 ? previewSlide.fullScriptText.slice(0, 50) + '...' : previewSlide.fullScriptText}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="absolute top-0.5 left-0.5 bg-black/50 text-white text-[8px] px-1 rounded">
+                    {idx + 1}
+                  </div>
+                  {idx === currentIndex && (
+                    <div className="absolute inset-0 bg-black/10 flex items-center justify-center pointer-events-none">
+                      <span className="bg-white/90 text-black text-[8px] font-bold px-1 rounded shadow-sm">EDITING</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[10px] text-gray-400 text-center">
+            Virtual rendering enabled for performance. Only style and basic layout are previewed in this view.
+          </p>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-2 border-t border-gray-100">

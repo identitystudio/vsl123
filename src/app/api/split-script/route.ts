@@ -45,9 +45,10 @@ async function processChunk(
     .map((s, i) => `${i + 1}. ${s}`)
     .join('\n');
 
+  console.log(`[AI] Splitting script chunk ${chunkIndex + 1} of ${totalChunks}...`);
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 4096,
       messages: [
         {
@@ -57,14 +58,9 @@ async function processChunk(
 RULES:
 - Each slide = 1-2 lines (keep short, max ~12 words per slide)
 - Group into scenes (Hook, Problem, Agitation, Solution, Authority, Proof, CTA, Close)
-- Mark ~30% of slides hasImage:true (emotional moments, authority, CTA)
+- Mark ~50% of slides hasImage:true to ensure a highly visual experience.
 - Keep original text exactly as written
-- IMPORTANT: For EVERY slide, provide an imageKeyword — a 2-4 word stock photo search term that visually represents the scene or emotion of the text. Think about what photo would best illustrate the meaning. Examples:
-  - "You watched your mom struggle to read" → "mother reading difficulty"
-  - "We made $2 million in sales" → "business success celebration"
-  - "I was broke and desperate" → "stressed person finances"
-  - "This changed everything for me" → "person breakthrough moment"
-  - "Join thousands of happy customers" → "happy diverse crowd"
+- IMPORTANT: For EVERY slide, provide an imageKeyword — a descriptive 3-5 word cinematic search term. Be specific about the subject, lighting, and mood. Example: "depressed man sitting at dark kitchen table rainy night" instead of just "sad man".
 - Return ONLY valid JSON array of scenes, no markdown
 
 Format: [{"sceneNumber":1,"title":"Scene Name","emotion":"hook","slides":[{"fullScriptText":"text here","hasImage":true,"imageKeyword":"visual search term"}]}]
@@ -85,8 +81,12 @@ ${numberedSentences}`,
     json = json.trim();
 
     return JSON.parse(json);
-  } catch (err) {
-    console.error(`Chunk ${chunkIndex} AI error, using fallback:`, err);
+  } catch (err: any) {
+    if (err?.status === 402 || err?.message?.toLowerCase().includes('billing') || err?.message?.toLowerCase().includes('credit')) {
+      console.error('❌ AI FAILED: Out of Anthropic credits or billing issue.');
+    } else {
+      console.error(`Chunk ${chunkIndex} AI error, using fallback:`, err);
+    }
     // Fallback: create simple slides from sentences
     return [
       {

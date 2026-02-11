@@ -76,6 +76,7 @@ interface SlidePreviewProps {
   onHeadshotClick?: () => void;
   onSplitImageDrag?: (newPositionY: number) => void;
   onImageDoubleClick?: () => void;
+  onWordClick?: (word: string) => void;
 }
 
 function WordSpan({
@@ -87,6 +88,7 @@ function WordSpan({
   underlineStyle,
   circleStyle,
   textColor,
+  onClick,
 }: {
   word: string;
   isBold: boolean;
@@ -96,6 +98,7 @@ function WordSpan({
   underlineStyle?: UnderlineStyle;
   circleStyle?: CircleStyle;
   textColor: string;
+  onClick?: (word: string) => void;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
@@ -112,7 +115,8 @@ function WordSpan({
   return (
     <span
       ref={ref}
-      className="relative inline-block"
+      onClick={() => onClick?.(word)}
+      className={`relative inline-block ${onClick ? 'cursor-pointer hover:bg-black/5 rounded' : ''}`}
       style={{
         fontWeight: isBold ? 900 : undefined,
         color: isRed ? '#dc2626' : textColor,
@@ -137,7 +141,7 @@ function WordSpan({
   );
 }
 
-export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDrag, onImageDoubleClick }: SlidePreviewProps) {
+export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDrag, onImageDoubleClick, onWordClick }: SlidePreviewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
   const dragStartPos = useRef(50);
@@ -401,6 +405,7 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
                       underlineStyle={slide.underlineStyles?.[cleanWord]}
                       circleStyle={slide.circleStyles?.[cleanWord]}
                       textColor={textColor}
+                      onClick={onWordClick}
                     />
                     {i < words.length - 1 ? ' ' : ''}
                   </span>

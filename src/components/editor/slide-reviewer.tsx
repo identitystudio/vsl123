@@ -7,13 +7,126 @@ import { SlideEditPanel } from './slide-edit-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUpdateSlides } from '@/hooks/use-project';
-import type { Slide } from '@/types';
+import type { Slide, UnderlineStyle, CircleStyle } from '@/types';
 import { toast } from 'sonner';
 
 interface SlideReviewerProps {
   projectId: string;
   slides: Slide[];
   onComplete: () => void;
+}
+
+const UNDERLINE_CYCLE: UnderlineStyle[] = [
+  'brush-red',
+  'brush-black',
+  'regular',
+  'brush-stroke-red',
+];
+
+const CIRCLE_CYCLE: CircleStyle[] = ['red-solid', 'red-dotted', 'black-solid'];
+
+type EmphasisType = 'bold' | 'underline' | 'red' | 'circle' | 'clear';
+
+function getNextEmphasis(
+  word: string,
+  slide: Slide
+): { type: EmphasisType; slide: Slide } {
+  const isBold = slide.boldWords.includes(word);
+  const isUnderlined = slide.underlineWords.includes(word);
+  const isRed = slide.redWords.includes(word);
+  const isCircled = slide.circleWords.includes(word);
+
+  if (!isBold && !isUnderlined && !isRed && !isCircled) {
+    return {
+      type: 'bold',
+      slide: { ...slide, boldWords: [...slide.boldWords, word] },
+    };
+  }
+
+  if (isBold && !isUnderlined && !isRed && !isCircled) {
+    return {
+      type: 'underline',
+      slide: {
+        ...slide,
+        boldWords: slide.boldWords.filter((w) => w !== word),
+        underlineWords: [...slide.underlineWords, word],
+        underlineStyles: { ...slide.underlineStyles, [word]: 'brush-red' },
+      },
+    };
+  }
+
+  if (isUnderlined) {
+    const currentStyle = slide.underlineStyles[word] || 'brush-red';
+    const currentIdx = UNDERLINE_CYCLE.indexOf(currentStyle);
+    if (currentIdx < UNDERLINE_CYCLE.length - 1) {
+      return {
+        type: 'underline',
+        slide: {
+          ...slide,
+          underlineStyles: {
+            ...slide.underlineStyles,
+            [word]: UNDERLINE_CYCLE[currentIdx + 1],
+          },
+        },
+      };
+    }
+    return {
+      type: 'red',
+      slide: {
+        ...slide,
+        underlineWords: slide.underlineWords.filter((w) => w !== word),
+        underlineStyles: (() => {
+          const s = { ...slide.underlineStyles };
+          delete s[word];
+          return s;
+        })(),
+        redWords: [...slide.redWords, word],
+      },
+    };
+  }
+
+  if (isRed) {
+    return {
+      type: 'circle',
+      slide: {
+        ...slide,
+        redWords: slide.redWords.filter((w) => w !== word),
+        circleWords: [...slide.circleWords, word],
+        circleStyles: { ...slide.circleStyles, [word]: 'red-solid' },
+      },
+    };
+  }
+
+  if (isCircled) {
+    const currentStyle = slide.circleStyles[word] || 'red-solid';
+    const currentIdx = CIRCLE_CYCLE.indexOf(currentStyle);
+    if (currentIdx < CIRCLE_CYCLE.length - 1) {
+      return {
+        type: 'circle',
+        slide: {
+          ...slide,
+          circleStyles: {
+            ...slide.circleStyles,
+            [word]: CIRCLE_CYCLE[currentIdx + 1],
+          },
+        },
+      };
+    }
+    return {
+      type: 'clear',
+      slide: {
+        ...slide,
+        circleWords: slide.circleWords.filter((w) => w !== word),
+        circleStyles: (() => {
+          const s = { ...slide.circleStyles };
+          delete s[word];
+          return s;
+        })(),
+      },
+    };
+  }
+
+  return { type: 'clear', slide };
 }
 
 export function SlideReviewer({
@@ -121,18 +234,23 @@ export function SlideReviewer({
     setEditing(true);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = (applyToAll?: boolean) => {
     if (!editSlide) return;
 
-    if (applyToAllActive) {
+    if (applyToAll || applyToAllActive) {
       // Apply style to all remaining + mark everything reviewed → skip to audio
       const finalSlides = slides.map((s, i) => {
         if (i === currentIndex) return { ...editSlide, reviewed: true };
-        if (i < currentIndex || s.reviewed) return { ...s, reviewed: true };
+        if (i < currentIndex || s.reviewed) return s;
         return {
           ...s,
           style: { ...editSlide.style },
           hasBackgroundImage: editSlide.hasBackgroundImage,
+          backgroundImage: editSlide.backgroundImage ? { ...editSlide.backgroundImage } : undefined,
+          headshot: editSlide.headshot ? { ...editSlide.headshot } : undefined,
+          isInfographic: editSlide.isInfographic,
+          infographicVisual: editSlide.infographicVisual ? { ...editSlide.infographicVisual } : undefined,
+          infographicCaptions: s.infographicCaptions || [s.fullScriptText],
           reviewed: true,
         };
       });
@@ -166,6 +284,11 @@ export function SlideReviewer({
         ...s,
         style: { ...editSlide.style },
         hasBackgroundImage: editSlide.hasBackgroundImage,
+        backgroundImage: editSlide.backgroundImage ? { ...editSlide.backgroundImage } : undefined,
+        headshot: editSlide.headshot ? { ...editSlide.headshot } : undefined,
+        isInfographic: editSlide.isInfographic,
+        infographicVisual: editSlide.infographicVisual ? { ...editSlide.infographicVisual } : undefined,
+        infographicCaptions: s.infographicCaptions || [s.fullScriptText],
       };
     });
     setSlides(updated);
@@ -196,6 +319,24 @@ export function SlideReviewer({
       setEditing(false);
       setEditSlide(null);
       setSkipToValue('');
+    }
+  };
+
+  const handleWordClick = (word: string) => {
+    const cleanWord = word.replace(/[.,!?;:'"()]/g, '');
+    if (!cleanWord) return;
+    
+    if (editing && editSlide) {
+      const result = getNextEmphasis(cleanWord, editSlide);
+      setEditSlide(result.slide);
+    } else {
+      const result = getNextEmphasis(cleanWord, currentSlide);
+      const updated = [...slides];
+      updated[currentIndex] = result.slide;
+      setSlides(updated);
+      
+      // Also save if they click while reviewing
+      saveSlides(updated);
     }
   };
 
@@ -311,6 +452,7 @@ export function SlideReviewer({
               ? () => bgImageInputRef.current?.click()
               : undefined
           }
+          onWordClick={handleWordClick}
         />
       </div>
 
@@ -361,7 +503,8 @@ export function SlideReviewer({
             }}
             onApplyToAll={handleApplyStyleToAll}
             headshotInputRef={headshotInputRef}
-            nextSlides={slides.slice(currentIndex + 1)}
+            allSlides={slides}
+            currentIndex={currentIndex}
           />
         </div>
       )}

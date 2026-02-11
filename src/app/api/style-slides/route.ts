@@ -19,15 +19,22 @@ interface SlideStyleDecision {
   slideId: string;
   preset: 'black-background' | 'white-background' | 'headshot-bio' | 'image-backdrop' | 'image-text' | 'infographic';
   displayMode?: 'blurred' | 'crisp' | 'split';
-  crispness?: number; // 0-100, for blurred mode
   textColor: 'white' | 'black';
   boldWords: string[];
   underlineWords: string[];
   circleWords: string[];
   redWords: string[];
+  underlineStyle?: 'brush-red' | 'brush-black' | 'regular' | 'brush-stroke-red';
+  circleStyle?: 'red-solid' | 'red-dotted' | 'black-solid';
   isInfographic: boolean;
-  infographicAbsorbCount?: number; // How many next slides to absorb
+  infographicAbsorbCount?: number;
+  gradientColor?: 'blue' | 'purple' | 'teal' | 'orange';
   isHeadshot: boolean;
+  refinedImageKeyword?: string;
+  textSize?: number;
+  splitRatio?: number;
+  blur?: number;
+  opacity?: number;
 }
 
 // Process slides in chunks to handle large scripts
@@ -39,113 +46,95 @@ async function processChunk(
 ): Promise<SlideStyleDecision[]> {
   const slidesText = slides
     .map((s, i) => {
-      const globalIndex = chunkIndex * 20 + i + 1;
+      const globalIndex = chunkIndex * 50 + i + 1;
       return `${globalIndex}. [${s.id}] "${s.fullScriptText}" (scene: ${s.sceneTitle || 'unknown'}, emotion: ${s.emotion || 'neutral'}, hasImage: ${s.hasImage || false})`;
     })
     .join('\n');
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: `You are an expert VSL (Video Sales Letter) slide designer. Analyze these slides and decide the PERFECT styling for each one.
-
-TOTAL SLIDES IN PROJECT: ${totalSlides}
-${previousStyles ? `PREVIOUS STYLING DECISIONS (for context/variety):\n${previousStyles}\n` : ''}
-
-SLIDES TO STYLE:
-${slidesText}
-
-FOR EACH SLIDE, DECIDE:
-
-1. **PRESET** - Pick the best visual style:
-   - "black-background" — Clean, dramatic, for punchy statements, CTAs
-   - "white-background" — Clean, professional, for simple facts
-   - "headshot-bio" — When speaker introduces themselves ("I'm Dr. X", "My name is", etc.)
-   - "image-backdrop" — Emotional moments, visual scenes, stories (needs image behind text)
-   - "image-text" — Split layout, image on top, text below (good for showing + telling)
-   - "infographic" — Teaching moments, explaining science/stats, lists of benefits
-
-2. **DISPLAY MODE** (for image presets only):
-   - "blurred" — Soft background, text readable (most common)
-   - "crisp" — Clear image visible, text overlay
-   - "split" — Image top half, text bottom half
-
-3. **CRISPNESS** (0-100, for blurred mode): 20-40 is usually good
-
-4. **TEXT COLOR**: "white" for dark/image backgrounds, "black" for light backgrounds
-
-5. **WORD EMPHASIS** (pick 0-3 key words per slide):
-   - boldWords: Power words, benefits, key phrases
-   - underlineWords: Important terms that need highlighting
-   - circleWords: Critical numbers, warnings, key takeaways (use sparingly)
-   - redWords: Danger words, warnings, pain points
-
-6. **INFOGRAPHIC**: Set true if this is an "explain" moment. Set infographicAbsorbCount to how many NEXT slides should be bundled as cycling captions (0-4).
-
-7. **HEADSHOT**: Set true if speaker is introducing themselves.
-
-VARIETY RULES:
-- Don't use same preset 5+ times in a row
-- Mix text-only and image slides
-- Use infographic for 1-2 teaching moments per script
-- Headshot only when speaker literally introduces themselves
-- Not every slide needs word emphasis — sometimes clean text is best
-
-Return ONLY valid JSON array (no markdown):
-[
-  {
-    "slideId": "abc",
-    "preset": "image-backdrop",
-    "displayMode": "blurred",
-    "crispness": 40,
-    "textColor": "white",
-    "boldWords": ["breakthrough"],
-    "underlineWords": [],
-    "circleWords": [],
-    "redWords": [],
-    "isInfographic": false,
-    "infographicAbsorbCount": 0,
-    "isHeadshot": false
-  }
-]`,
-      },
-    ],
-  });
-
-  const textContent = message.content.find((b) => b.type === 'text');
-  if (!textContent || textContent.type !== 'text') {
-    // Fallback: return basic styling
-    return slides.map((s) => ({
-      slideId: s.id,
-      preset: 'black-background' as const,
-      textColor: 'white' as const,
-      boldWords: [],
-      underlineWords: [],
-      circleWords: [],
-      redWords: [],
-      isInfographic: false,
-      isHeadshot: false,
-    }));
-  }
-
-  let json = textContent.text.trim();
-  // Clean markdown if present
-  if (json.startsWith('```json')) json = json.slice(7);
-  else if (json.startsWith('```')) json = json.slice(3);
-  if (json.endsWith('```')) json = json.slice(0, -3);
-  json = json.trim();
+  console.log(`[AI] Designing styles for chunk ${chunkIndex + 1} (${slides.length} slides)...`);
 
   try {
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 4096,
+      system: `You are a World-Class VSL (Video Sales Letter) Creative Director and Slide Designer. 
+Your goal is to create a high-conversion, visually stunning, and cinematic slide deck.
+
+DESIGN PHILOSOPHY:
+1. **The "Quick Preset" Trinity**: Your designs must primarily revolve around these three high-conversion layouts:
+   - **Image + Text** (preset: "image-text"): This is the SPLIT IMAGE style. Use this for at least 30-40% of the slides. It shows an image on top and text on the bottom.
+   - **Image Backdrop** (preset: "image-backdrop"): Emotional, cinematic, full-screen background with text overlay. Use this for another 30-40% of slides.
+   - **Headshot + Bio** (preset: "headshot-bio"): Use whenever the person is introducing themselves or speaking directly to the viewer.
+2. **Emotional Matching**: Every slide must visually depict the emotion of the script.
+3. **MUST USE IMAGES**: If a slide has "hasImage: true" in the input, you MUST use "image-backdrop" or "image-text". Never use white/black for these.
+4. **Cinematic Imagery**: Your "refinedImageKeyword" must be a 4-7 word professional photography prompt (e.g., "distressed businessman in shadow, blue cinematic lighting, sharp focus").
+5. **Bold Layouts**: Vary the "splitRatio", "blur", and "opacity" to create a unique rhythm.
+6. **Dynamic Emphasis**: Use underlines, circles, and bolding to guide the viewer's eye.
+7. **MANDATORY ROTATION**: You are forbidden from using the same preset for two slides in a row. You must rotate between the Trinity (Split, Backdrop, Headshot) to maintain viewer engagement.
+8. **First & Last Slide**: Usually "headshot-bio" (if introducing) or "image-backdrop" (for impact).
+9. **FACTS & LISTS**: Use "image-text" (Split) for all factual statements or new points.
+10. **STRICT VARIETY**: In every 4-slide sequence, there MUST be at least one "image-text" (Split) and at least one "image-backdrop".
+
+JSON SCHEMA:
+Return ONLY a valid JSON array of objects.
+[
+  {
+    "slideId": "string",
+    "preset": "black-background" | "white-background" | "headshot-bio" | "image-backdrop" | "image-text" | "infographic",
+    "displayMode": "blurred" | "crisp" | "split",
+    "textColor": "white" | "black",
+    "boldWords": ["string"],
+    "underlineWords": ["string"],
+    "circleWords": ["string"],
+    "redWords": ["string"],
+    "underlineStyle": "brush-red" | "brush-black" | "regular" | "brush-stroke-red",
+    "circleStyle": "red-solid" | "red-dotted" | "black-solid",
+    "isInfographic": boolean,
+    "infographicAbsorbCount": 0-4,
+    "gradientColor": "blue" | "purple" | "teal" | "orange",
+    "isHeadshot": boolean,
+    "refinedImageKeyword": "Detailed Pexels Search Query",
+    "textSize": 60 | 72 | 84 | 96 | 108 | 120,
+    "splitRatio": 30-70,
+    "blur": 0-15,
+    "opacity": 10-100
+  }
+]`,
+      messages: [
+        {
+          role: 'user',
+          content: `Style these slides for a high-impact VSL.
+TOTAL SLIDES: ${totalSlides}
+SLIDES:
+${slidesText}`,
+        },
+      ],
+    });
+
+    const textContent = message.content.find((b) => b.type === 'text');
+    if (!textContent || textContent.type !== 'text') {
+      throw new Error('No text content in AI response');
+    }
+
+    let json = textContent.text.trim();
+    if (json.startsWith('```json')) json = json.slice(7);
+    else if (json.startsWith('```')) json = json.slice(3);
+    if (json.endsWith('```')) json = json.slice(0, -3);
+    json = json.trim();
+
     return JSON.parse(json);
-  } catch {
-    // Fallback on parse error
+  } catch (err: any) {
+    if (err?.status === 402 || err?.message?.toLowerCase().includes('billing') || err?.message?.toLowerCase().includes('credit')) {
+      console.error('❌ AI FAILED: Out of Anthropic credits or billing issue.');
+    } else {
+      console.error(`Chunk ${chunkIndex} styling error:`, err);
+    }
+    
+    // Return basic styling as fallback
     return slides.map((s) => ({
       slideId: s.id,
-      preset: 'black-background' as const,
-      textColor: 'white' as const,
+      preset: 'white-background' as const,
+      textColor: 'black' as const,
       boldWords: [],
       underlineWords: [],
       circleWords: [],
@@ -167,26 +156,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process in chunks of 20 slides
-    const chunkSize = 20;
+    // Process in chunks of 50 slides for efficiency
+    const chunkSize = 50;
     const allStyles: SlideStyleDecision[] = [];
+    const chunks: SlideInput[][] = [];
 
     for (let i = 0; i < slides.length; i += chunkSize) {
-      const chunk = slides.slice(i, i + chunkSize);
+      chunks.push(slides.slice(i, i + chunkSize));
+    }
 
-      // Build context from previous styling decisions for variety
-      const previousContext = allStyles.length > 0
-        ? allStyles.slice(-10).map((s) => `${s.slideId}: ${s.preset}`).join(', ')
-        : '';
-
-      const chunkStyles = await processChunk(
-        chunk,
-        Math.floor(i / chunkSize),
-        slides.length,
-        previousContext
+    // Process chunks in parallel with a concurrency limit of 5
+    const CONCURRENCY_LIMIT = 5;
+    for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
+      const batch = chunks.slice(i, i + CONCURRENCY_LIMIT);
+      const batchResults = await Promise.all(
+        batch.map((chunk, j) => {
+          const chunkIndex = i + j;
+          return processChunk(
+            chunk,
+            chunkIndex,
+            slides.length,
+            '' // Context is harder in parallel, skipping for performance on huge decks
+          );
+        })
       );
-
-      allStyles.push(...chunkStyles);
+      for (const results of batchResults) {
+        allStyles.push(...results);
+      }
     }
 
     return NextResponse.json({ styles: allStyles });

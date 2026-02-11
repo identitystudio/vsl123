@@ -1,9 +1,16 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, FileText } from 'lucide-react';
+import { Sparkles, FileText, MousePointer2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { useUpdateProject } from '@/hooks/use-project';
 import type { Slide, SlideStyle, TextSegment, BackgroundImage, InfographicVisual } from '@/types';
 import { toast } from 'sonner';
@@ -95,8 +102,8 @@ function createSlideFromText(
     redWords: [],
     underlineStyles: {},
     circleStyles: {},
-    hasBackgroundImage: false,
-    backgroundImage: undefined,
+    hasBackgroundImage: hasImage,
+    backgroundImage: hasImage ? { url: '', opacity: 60, blur: 8, displayMode: 'blurred' } : undefined,
     sceneNumber,
     sceneTitle,
     emotion,
@@ -374,9 +381,11 @@ export function ScriptInput({
   const [script, setScript] = useState(initialScript);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [showOptions, setShowOptions] = useState(false);
   const updateProject = useUpdateProject();
 
-  const handleGenerate = async () => {
+  const handleAIGenerate = async () => {
+    setShowOptions(false);
     if (!script.trim()) {
       toast.error('Please paste your VSL script first');
       return;
@@ -384,6 +393,7 @@ export function ScriptInput({
 
     setGenerating(true);
     setProgress(5);
+    console.log('🚀 AI Generation started: Initializing script processing...');
 
     try {
       // Save script to project
@@ -436,6 +446,7 @@ export function ScriptInput({
       }
 
       setProgress(35);
+      console.log(`🧠 AI Splitter complete. Now designing visual styles for ${slides.length} slides...`);
 
       // Step 2: AI Style Director - style all slides at once
       const styleResponse = await fetch('/api/style-slides', {
@@ -454,23 +465,35 @@ export function ScriptInput({
         }),
       });
 
+      if (styleResponse.status === 402) {
+        console.error('⚠️ AI ERROR: Insufficient credits or billing issue detected.');
+      }
+
       let styleData: { styles: Array<{
         slideId: string;
         preset: string;
         displayMode?: string;
-        crispness?: number;
         textColor: string;
         boldWords: string[];
         underlineWords: string[];
         circleWords: string[];
         redWords: string[];
+        underlineStyle?: 'brush-red' | 'brush-black' | 'regular' | 'brush-stroke-red';
+        circleStyle?: 'red-solid' | 'red-dotted' | 'black-solid';
         isInfographic: boolean;
         infographicAbsorbCount?: number;
+        gradientColor?: string;
         isHeadshot: boolean;
+        refinedImageKeyword?: string;
+        textSize?: number;
+        splitRatio?: number;
+        blur?: number;
+        opacity?: number;
       }> } = { styles: [] };
 
       if (styleResponse.ok) {
         styleData = await styleResponse.json();
+        console.log('💎 AI Style Decisions Received:', styleData.styles);
       }
 
       setProgress(50);
@@ -488,16 +511,25 @@ export function ScriptInput({
         updatedSlide.circleWords = styleDecision.circleWords || [];
         updatedSlide.redWords = styleDecision.redWords || [];
 
-        // Set underline styles (default to brush-red)
+        // Set underline styles
         updatedSlide.underlineStyles = {};
         for (const word of updatedSlide.underlineWords) {
-          updatedSlide.underlineStyles[word] = 'brush-red';
+          updatedSlide.underlineStyles[word] = styleDecision.underlineStyle || 'brush-red';
         }
 
-        // Set circle styles (default to red-solid)
+        // Set circle styles
         updatedSlide.circleStyles = {};
         for (const word of updatedSlide.circleWords) {
-          updatedSlide.circleStyles[word] = 'red-solid';
+          updatedSlide.circleStyles[word] = styleDecision.circleStyle || 'red-solid';
+        }
+
+        // Apply AI variations
+        if (styleDecision.textSize) {
+          updatedSlide.style.textSize = styleDecision.textSize;
+        }
+
+        if (styleDecision.refinedImageKeyword) {
+          updatedSlide.imageKeyword = styleDecision.refinedImageKeyword;
         }
 
         // Apply preset styles
@@ -528,13 +560,13 @@ export function ScriptInput({
             updatedSlide.style = {
               ...updatedSlide.style,
               background: 'image',
-              textColor: styleDecision.textColor === 'black' ? 'black' : 'white',
+              textColor: (styleDecision.textColor as 'white' | 'black') || 'white',
             };
             updatedSlide.hasBackgroundImage = true;
             updatedSlide.backgroundImage = {
               url: '',
-              opacity: styleDecision.crispness || 40,
-              blur: 8,
+              opacity: styleDecision.opacity ?? 60,
+              blur: styleDecision.blur ?? 8,
               displayMode: (styleDecision.displayMode as 'blurred' | 'crisp') || 'blurred',
             };
             break;
@@ -542,25 +574,32 @@ export function ScriptInput({
             updatedSlide.style = {
               ...updatedSlide.style,
               background: 'split',
-              textColor: 'black',
-              splitRatio: 50,
+              textColor: (styleDecision.textColor as 'white' | 'black') || 'black',
+              splitRatio: styleDecision.splitRatio ?? 50,
             };
             updatedSlide.hasBackgroundImage = true;
             updatedSlide.backgroundImage = {
               url: '',
-              opacity: 100,
-              blur: 0,
+              opacity: styleDecision.opacity ?? 100,
+              blur: styleDecision.blur ?? 0,
               displayMode: 'split',
               imagePositionY: 35,
             };
             break;
           case 'infographic':
+            const gColor = styleDecision.gradientColor || 'purple';
+            const gradients = {
+              purple: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              blue: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+              teal: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)',
+              orange: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
+            };
             updatedSlide.style = {
               ...updatedSlide.style,
               background: 'gradient',
               textColor: 'white',
-              gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              gradientName: 'purple',
+              gradient: gradients[gColor as keyof typeof gradients] || gradients.purple,
+              gradientName: gColor as any,
             };
             updatedSlide.isInfographic = true;
             break;
@@ -576,10 +615,12 @@ export function ScriptInput({
 
       setProgress(60);
 
-      // Step 3: Fetch images for slides that need them
+      // Step 3: Fetch images for slides that have a keyword (even if not marked as image-bg initially)
       const slidesNeedingImages = styledSlides.filter(
-        (s) => s.hasBackgroundImage && !s.backgroundImage?.url && s.imageKeyword
+        (s) => s.imageKeyword && !s.backgroundImage?.url
       );
+
+      console.log(`🖼️ Attempting to fetch images for ${slidesNeedingImages.length} slides...`);
 
       // Fetch images in parallel (max 5 at a time)
       for (let i = 0; i < slidesNeedingImages.length; i += 5) {
@@ -594,8 +635,13 @@ export function ScriptInput({
             if (imgResponse.ok) {
               const imgData = await imgResponse.json();
               if (imgData.photos?.[0]?.url) {
+                console.log(`🖼️ Pexels fetch SUCCESS for "${slide.imageKeyword}":`, imgData.photos[0].url);
                 return { slideId: slide.id, url: imgData.photos[0].url };
+              } else {
+                console.warn(`⚠️ Pexels returned 0 images for: "${slide.imageKeyword}"`);
               }
+            } else {
+              console.error(`❌ Pexels API error for "${slide.imageKeyword}":`, imgResponse.status);
             }
             return null;
           } catch {
@@ -609,11 +655,30 @@ export function ScriptInput({
         for (const result of results) {
           if (result) {
             const slideIndex = styledSlides.findIndex((s) => s.id === result.slideId);
-            if (slideIndex !== -1 && styledSlides[slideIndex].backgroundImage) {
-              styledSlides[slideIndex].backgroundImage = {
-                ...styledSlides[slideIndex].backgroundImage!,
-                url: result.url,
-              };
+            if (slideIndex !== -1) {
+              const slide = styledSlides[slideIndex];
+              if (!slide.backgroundImage) {
+                slide.backgroundImage = { url: '', opacity: 60, blur: 8, displayMode: 'blurred' };
+              }
+              slide.backgroundImage.url = result.url;
+              slide.hasBackgroundImage = true;
+
+              if (slide.style.background === 'white' || slide.style.background === 'dark' || slide.style.background === 'gradient') {
+                const useSplit = slideIndex % 2 === 0;
+                if (useSplit) {
+                   slide.style.background = 'split';
+                   slide.style.textColor = 'black';
+                   slide.backgroundImage.displayMode = 'split';
+                   slide.backgroundImage.opacity = 100;
+                   slide.backgroundImage.blur = 0;
+                   slide.backgroundImage.imagePositionY = 35;
+                } else {
+                   slide.style.background = 'image';
+                   slide.style.textColor = 'white';
+                   slide.backgroundImage.displayMode = 'blurred';
+                   slide.backgroundImage.opacity = 60;
+                }
+              }
             }
           }
         }
@@ -667,15 +732,77 @@ export function ScriptInput({
       toast.success(
         `${styledSlides.length} slides styled with ${imageCount} images${infographicCount > 0 ? ` and ${infographicCount} infographics` : ''}. Magic complete!`
       );
+      console.log('✅ AI Designing complete! All slides have been styled and images fetched.');
       onSlidesGenerated(styledSlides);
-    } catch (err) {
+    } catch (err: any) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('billing')) {
+        console.error('❌ CRITICAL ERROR: Could not use AI because of credit/billing issues.');
+      }
       toast.error(`Failed to generate slides: ${msg}`);
       console.error('Slide generation error:', err);
       setGenerating(false);
       setProgress(0);
     }
   };
+
+  const handleManualGenerate = async () => {
+    setShowOptions(false);
+    if (!script.trim()) {
+      toast.error('Please paste your VSL script first');
+      return;
+    }
+
+    setGenerating(true);
+    setProgress(30);
+
+    try {
+      // Save script to project
+      await updateProject.mutateAsync({
+        projectId,
+        updates: { original_script: script },
+      });
+
+      setProgress(50);
+
+      // Local splitting logic (by newline or sentences)
+      const lines = script
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      const manualSlides = lines.map((text, i) => 
+        createSlideFromText(
+          text,
+          false,
+          undefined,
+          Math.floor(i / 5) + 1, // Mock scene numbers
+          'Standard Section',
+          'neutral'
+        )
+      );
+
+      setProgress(90);
+      await new Promise((r) => setTimeout(r, 400));
+      setProgress(100);
+
+      toast.success(`Generated ${manualSlides.length} slides manually. Design them yourself!`);
+      onSlidesGenerated(manualSlides);
+    } catch (err) {
+      toast.error('Failed to create slides manually');
+      setGenerating(false);
+      setProgress(0);
+    }
+  };
+
+  const handleStartGenerating = () => {
+    if (!script.trim()) {
+      toast.error('Please paste your VSL script first');
+      return;
+    }
+    setShowOptions(true);
+  };
+
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -701,7 +828,7 @@ export function ScriptInput({
           <MagicProgress progress={progress} />
         ) : (
           <Button
-            onClick={handleGenerate}
+            onClick={handleStartGenerating}
             size="lg"
             className="w-full text-lg py-6 bg-black text-white hover:bg-gray-800 rounded-xl gap-2"
             disabled={!script.trim()}
@@ -710,6 +837,49 @@ export function ScriptInput({
             Generate Slides &rarr;
           </Button>
         )}
+
+        {/* Generation Options Dialog */}
+        <Dialog open={showOptions} onOpenChange={setShowOptions}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>How would you like to build?</DialogTitle>
+              <DialogDescription>
+                Choose between instant AI magic or manual control.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <button
+                onClick={handleAIGenerate}
+                className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-black hover:bg-gray-50 transition-all text-left group"
+              >
+                <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors">
+                  <Sparkles className="w-6 h-6 text-purple-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-900">Generate slides with AI</h3>
+                  <p className="text-sm text-gray-500 italic">
+                    Claude 3.5 Sonnet handles the layout, emphasis, and image selection for you.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleManualGenerate}
+                className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-black hover:bg-gray-50 transition-all text-left group"
+              >
+                <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                  <MousePointer2 className="w-6 h-6 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-900">Edit generates slide manually</h3>
+                  <p className="text-sm text-gray-500">
+                    Skip the AI credits. We&apos;ll split your script and set the default white style. You do the rest.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {!generating && (
           <p className="text-sm text-gray-400 text-center">
