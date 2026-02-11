@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { Slide } from '@/types';
 import { toast } from 'sonner';
-import { exportSlidesToZipHtml2Canvas } from '@/lib/export-html2canvas';
 
 interface PreviewExportProps {
   projectId: string;
@@ -838,22 +837,6 @@ export function PreviewExport({
     }
   };
 
-  const handleHtml2CanvasZipExport = async () => {
-    if (exporting) return;
-    setExporting(true);
-    setExportProgress(0);
-    try {
-      await exportSlidesToZipHtml2Canvas(slides, projectName, (progress) => {
-        setExportProgress(progress);
-      });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setExporting(false);
-      setExportProgress(0);
-    }
-  };
-
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex flex-col items-center gap-6">
@@ -1007,65 +990,276 @@ export function PreviewExport({
               </div>
             )}
 
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowSettings(true)}
-                variant="outline"
-                size="lg"
-                className="gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                API Settings
-              </Button>
             <div className="flex flex-col gap-3 w-full max-w-md">
               <Button
-                onClick={handleExport}
-                size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
-              >
-                <Download className="w-5 h-5" />
-                Export as ZIP(via Api)
-              </Button>
-              <Button
-                onClick={handleFFmpegZipExport}
-                size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
-              >
-                <Download className="w-5 h-5" />
-                Export as ZIP (via FFmpeg)
-              </Button>
-              <Button
-                onClick={handleHtml2CanvasZipExport}
-                size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
-              >
-                <Download className="w-5 h-5" />
-                Export to ZIP (html2canvas)
-              </Button>
-              <Button
-                onClick={handleFFmpegExport}
-                size="lg"
-                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full"
-              >
-                <Download className="w-5 h-5" />
-                Export as Video(via FFmpeg)
-              </Button>
+                onClick={() => {
+                  const vpsIp = '76.13.49.238'; 
 
-              
-              
-              <Button
-                onClick={handleVideoExport}
+                  const handleVpsExport = async () => {
+                    if (exporting) return;
+                    setExporting(true);
+                    setExportProgress(10); // Initial
+
+                    try {
+                      toast.info('Preparing slides for VPS render...');
+
+                      const slidesWithHtml = [];
+                      const React = await import('react');
+                      const ReactDOM = await import('react-dom/client');
+
+                      // Render each slide to HTML string locally first
+                      for (let i = 0; i < slides.length; i++) {
+                        const slide = slides[i];
+                        
+                        // Create off-screen container
+                        const wrapper = document.createElement('div');
+                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+                        const container = document.createElement('div');
+                        container.style.cssText = 'width: 1920px; height: 1080px;';
+                        wrapper.appendChild(container);
+                        document.body.appendChild(wrapper);
+
+                        const root = ReactDOM.createRoot(container);
+                        
+                        // Sync Render
+                        await new Promise<void>((resolve) => {
+                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                          // Brief wait for flush
+                          setTimeout(resolve, 100); 
+                        });
+
+                        const renderedElement = container.firstElementChild as HTMLElement;
+                        if (!renderedElement) throw new Error('Failed to render slide locally');
+
+                        slidesWithHtml.push({
+                          audioUrl: slide.audioUrl,
+                          // Send the raw HTML content of the slide component
+                          htmlContent: renderedElement.outerHTML
+                        });
+
+                        // Cleanup DOM
+                        root.unmount();
+                        document.body.removeChild(wrapper);
+                      }
+
+                      toast.info('Sending project to VPS render server...');
+
+                      const response = await fetch(`http://${vpsIp}:3001/render`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          slides: slidesWithHtml,
+                          projectName
+                        }),
+                      });
+
+                      if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`VPS Server Error: ${errText}`);
+                      }
+
+                      setExportProgress(50);
+                      toast.success('Rendering on VPS... (This may take a minute)');
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.mp4`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      setExportProgress(100);
+                      toast.success('Video downloaded from VPS!');
+
+                    } catch (error) {
+                      console.error(error);
+                      toast.error(`VPS Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    } finally {
+                      setExporting(false);
+                      setExportProgress(0);
+                    }
+                  };
+
+                  const handleVpsZipExport = async () => {
+                    if (exporting) return;
+                    setExporting(true);
+                    setExportProgress(10);
+
+                    try {
+                      toast.info('Preparing slides for VPS ZIP export...');
+
+                      const slidesWithHtml = [];
+                      const React = await import('react');
+                      const ReactDOM = await import('react-dom/client');
+
+                      for (let i = 0; i < slides.length; i++) {
+                        const slide = slides[i];
+                        const wrapper = document.createElement('div');
+                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+                        const container = document.createElement('div');
+                        container.style.cssText = 'width: 1920px; height: 1080px;';
+                        wrapper.appendChild(container);
+                        document.body.appendChild(wrapper);
+
+                        const root = ReactDOM.createRoot(container);
+                        await new Promise<void>((resolve) => {
+                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                          setTimeout(resolve, 100); 
+                        });
+
+                        const renderedElement = container.firstElementChild as HTMLElement;
+                        if (!renderedElement) throw new Error('Failed to render slide locally');
+
+                        slidesWithHtml.push({
+                          audioUrl: slide.audioUrl,
+                          htmlContent: renderedElement.outerHTML
+                        });
+
+                        root.unmount();
+                        document.body.removeChild(wrapper);
+                      }
+
+                      toast.info('Sending project to VPS ZIP server...');
+
+                      const response = await fetch(`http://${vpsIp}:3001/render-zip`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                      });
+
+                      if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`VPS Server Error: ${errText}`);
+                      }
+
+                      setExportProgress(50);
+                      toast.success('Zipping on VPS... (This may take a minute)');
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.zip`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      setExportProgress(100);
+                      toast.success('ZIP downloaded from VPS!');
+
+                    } catch (error) {
+                      console.error(error);
+                      toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    } finally {
+                      setExporting(false);
+                      setExportProgress(0);
+                    }
+                  };
+                  
+                  handleVpsExport();
+                }}
                 size="lg"
-                disabled
-                className="bg-gray-300 text-gray-500 cursor-not-allowed gap-2 text-lg px-8 py-6 relative w-full"
+                className="bg-indigo-600 text-white hover:bg-indigo-700 gap-2 text-lg px-8 py-6 w-full"
               >
                 <Download className="w-5 h-5" />
-                Export Video (json2video)
-                <span className="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full font-semibold">
-                  In Progress
-                </span>
+                Export Video (VPS / Fast)
               </Button>
-            </div>
+              
+              <Button
+                onClick={async () => {
+                   const vpsIp = '76.13.49.238'; 
+                   
+                   const handleVpsZipExport = async () => {
+                    if (exporting) return;
+                    setExporting(true);
+                    setExportProgress(10);
+
+                    try {
+                      toast.info('Preparing slides for VPS ZIP export...');
+
+                      const slidesWithHtml = [];
+                      const React = await import('react');
+                      const ReactDOM = await import('react-dom/client');
+
+                      for (let i = 0; i < slides.length; i++) {
+                        const slide = slides[i];
+                        const wrapper = document.createElement('div');
+                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+                        const container = document.createElement('div');
+                        container.style.cssText = 'width: 1920px; height: 1080px;';
+                        wrapper.appendChild(container);
+                        document.body.appendChild(wrapper);
+
+                        const root = ReactDOM.createRoot(container);
+                        await new Promise<void>((resolve) => {
+                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                          setTimeout(resolve, 100); 
+                        });
+
+                        const renderedElement = container.firstElementChild as HTMLElement;
+                        if (!renderedElement) throw new Error('Failed to render slide locally');
+
+                        slidesWithHtml.push({
+                          audioUrl: slide.audioUrl,
+                          htmlContent: renderedElement.outerHTML
+                        });
+
+                        root.unmount();
+                        document.body.removeChild(wrapper);
+                      }
+
+                      toast.info('Sending project to VPS ZIP server...');
+
+                      const response = await fetch(`http://${vpsIp}:3001/render-zip`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                      });
+
+                      if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`VPS Server Error: ${errText}`);
+                      }
+
+                      setExportProgress(50);
+                      toast.success('Zipping on VPS... (This may take a minute)');
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.zip`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      setExportProgress(100);
+                      toast.success('ZIP downloaded from VPS!');
+
+                    } catch (error) {
+                      console.error(error);
+                      toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    } finally {
+                      setExporting(false);
+                      setExportProgress(0);
+                    }
+                  };
+                  
+                  handleVpsZipExport();
+                }}
+                size="lg"
+                className="bg-gray-800 text-white hover:bg-gray-900 gap-2 text-lg px-8 py-6 w-full"
+              >
+                <Download className="w-5 h-5" />
+                Export ZIP (VPS / Fast)
+              </Button>
             </div>
           </div>
         )}
