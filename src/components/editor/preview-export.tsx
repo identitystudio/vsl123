@@ -1044,7 +1044,7 @@ export function PreviewExport({
 
                       toast.info('Sending project to VPS render server...');
 
-                      const response = await fetch(`http://${vpsIp}:3001/render`, {
+                      const response = await fetch(`/api/vps-render?mode=render`, {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
@@ -1216,7 +1216,7 @@ export function PreviewExport({
 
                       toast.info('Sending project to VPS ZIP server...');
 
-                      const response = await fetch(`http://${vpsIp}:3001/render-zip`, {
+                      const response = await fetch(`/api/vps-render?mode=render-zip`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ slides: slidesWithHtml, projectName }),
