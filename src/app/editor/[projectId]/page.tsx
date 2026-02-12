@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { EditorContent } from '@/components/editor/editor-content';
@@ -16,6 +17,9 @@ export default async function EditorPage({ params }: EditorPageProps) {
   if (!user) {
     redirect('/auth/login');
   }
-
-  return <EditorContent projectId={projectId} />;
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <EditorContent projectId={projectId} />
+    </Suspense>
+  );
 }

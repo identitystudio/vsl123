@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
@@ -71,19 +71,59 @@ export function DashboardContent({ email }: DashboardContentProps) {
         ) : projects && projects.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((project) => (
-              <button
+              <div
                 key={project.id}
-                onClick={() => handleOpenProject(project.id)}
-                className="text-left p-6 rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all bg-white group"
+                className="group relative flex flex-col p-6 rounded-2xl border border-gray-200 hover:border-black/10 hover:shadow-xl hover:shadow-gray-200/50 transition-all bg-white overflow-hidden"
               >
-                <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
-                <p className="text-sm text-gray-500">
-                  {project.slides?.length || 0} slides
-                </p>
-                <p className="text-sm text-gray-400 mt-1">
-                  Updated {format(new Date(project.updated_at), 'MMM d, yyyy')}
-                </p>
-              </button>
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-gray-50 rounded-full group-hover:bg-black/5 transition-colors" />
+
+                <h3 className="font-bold text-xl mb-1 relative z-10">{project.name}</h3>
+                <div className="flex items-center gap-2 mb-4 relative z-10">
+                  <span className="text-sm px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
+                    {project.slides?.length || 0} slides
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {format(new Date(project.updated_at), 'MMM d')}
+                  </span>
+                </div>
+
+                <div className="mt-auto flex flex-col gap-2 relative z-10">
+                  {project.slides?.length > 0 ? (
+                    <>
+                      <Button
+                        onClick={() => router.push(`/editor/${project.id}?step=2`)}
+                        className="w-full bg-black text-white hover:bg-gray-800 h-10 rounded-lg text-sm font-semibold"
+                      >
+                        Design Slides &rarr;
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => router.push(`/editor/${project.id}?step=1`)}
+                        className="w-full text-gray-500 hover:text-black hover:bg-gray-50 h-9 transition-all text-xs"
+                      >
+                        Edit Script
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      onClick={() => handleOpenProject(project.id)}
+                      className="w-full bg-black text-white hover:bg-gray-800 h-10 rounded-lg"
+                    >
+                      Start Designing
+                    </Button>
+                  )}
+                </div>
+
+                {/* Delete button (hidden by default, shown on hover) */}
+                <button
+                  onClick={(e) => handleDeleteProject(e, project.id)}
+                  className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20"
+                  title="Delete Project"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             ))}
           </div>
         ) : (

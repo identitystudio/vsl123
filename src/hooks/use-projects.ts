@@ -46,11 +46,20 @@ export function useProjects() {
       
       const { data, error } = await supabase
         .from('vsl_projects')
-        .select('*')
+        .select(`
+          *,
+          slide_count:slides(count)
+        `)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
-      return data as VslProject[];
+      
+      const projects = (data || []).map(p => ({
+        ...p,
+        slides: { length: p.slide_count?.[0]?.count || 0 }
+      }));
+
+      return projects as unknown as VslProject[];
     },
   });
 }

@@ -6,7 +6,7 @@ import { SlidePreview } from './slide-preview';
 import { SlideEditPanel } from './slide-edit-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useUpdateSlides } from '@/hooks/use-project';
+import { useUpdateSlides, useUpdateSingleSlide } from '@/hooks/use-project';
 import type { Slide, UnderlineStyle, CircleStyle } from '@/types';
 import { toast } from 'sonner';
 
@@ -14,6 +14,9 @@ interface SlideReviewerProps {
   projectId: string;
   slides: Slide[];
   onComplete: () => void;
+  forceShowSlides?: boolean;
+  initialIndex?: number;
+  autoEdit?: boolean;
 }
 
 const UNDERLINE_CYCLE: UnderlineStyle[] = [
@@ -133,9 +136,12 @@ export function SlideReviewer({
   projectId,
   slides: initialSlides,
   onComplete,
+  forceShowSlides,
+  initialIndex = 0,
+  autoEdit = false,
 }: SlideReviewerProps) {
   const [slides, setSlides] = useState<Slide[]>(initialSlides);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [editing, setEditing] = useState(false);
   const [editSlide, setEditSlide] = useState<Slide | null>(null);
   const [skipToValue, setSkipToValue] = useState('');
@@ -145,15 +151,39 @@ export function SlideReviewer({
   const holdStartRef = useRef<number>(0);
   const headshotInputRef = useRef<HTMLInputElement>(null);
   const bgImageInputRef = useRef<HTMLInputElement>(null);
+  const updateSingleSlide = useUpdateSingleSlide();
   const updateSlides = useUpdateSlides();
   const HOLD_DURATION = 5000;
+
+  // Auto-open editing if jumped to a slide
+  useEffect(() => {
+    if (autoEdit) {
+      setEditing(true);
+      setEditSlide({ ...slides[currentIndex] });
+    }
+  }, [autoEdit, currentIndex, slides]);
 
   const currentSlide = slides[currentIndex];
   const reviewedCount = slides.filter((s) => s.reviewed).length;
   const allReviewed = reviewedCount === slides.length;
 
-  // Auto-save slides periodically
-  const saveSlides = useCallback(
+  // Save a single slide to the DB
+  const saveSingleSlide = useCallback(
+    async (slide: Slide) => {
+      try {
+        await updateSingleSlide.mutateAsync({
+          slideId: slide.id,
+          updates: slide,
+        });
+      } catch {
+        // Silent save failure — don't interrupt the user
+      }
+    },
+    [updateSingleSlide]
+  );
+
+  // Bulk save (for apply to all)
+  const saveBulkSlides = useCallback(
     async (updatedSlides: Slide[]) => {
       try {
         await updateSlides.mutateAsync({
@@ -161,7 +191,7 @@ export function SlideReviewer({
           slides: updatedSlides,
         });
       } catch {
-        // Silent save failure — don't interrupt the user
+        toast.error('Failed to save slides');
       }
     },
     [projectId, updateSlides]
@@ -192,18 +222,17 @@ export function SlideReviewer({
   });
 
   const handleLooksGood = () => {
+    const slideToSave = { ...slides[currentIndex], reviewed: true };
     const updated = [...slides];
-    updated[currentIndex] = { ...updated[currentIndex], reviewed: true };
+    updated[currentIndex] = slideToSave;
     setSlides(updated);
 
     if (currentIndex < slides.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
 
-    // Save every 5 slides
-    if ((currentIndex + 1) % 5 === 0) {
-      saveSlides(updated);
-    }
+    // Save this specific slide immediately
+    saveSingleSlide(slideToSave);
   };
 
   // Hold "Looks Good" for 5 seconds → approve all remaining slides
@@ -214,7 +243,7 @@ export function SlideReviewer({
       const progress = Math.min(100, (elapsed / HOLD_DURATION) * 100);
       setHoldProgress(progress);
       if (progress >= 100) {
-        handleFinish();
+        handleApproveAllRemaining();
         return;
       }
       holdAnimRef.current = requestAnimationFrame(animate);
@@ -255,25 +284,34 @@ export function SlideReviewer({
         };
       });
       setSlides(finalSlides);
+      saveBulkSlides(finalSlides);
       setEditing(false);
       setEditSlide(null);
       setApplyToAllActive(false);
-      saveSlides(finalSlides).then(() => onComplete());
       return;
     }
 
-    const updated = [...slides];
-    updated[currentIndex] = { ...editSlide, reviewed: true };
+    const slideToSave = { ...editSlide, reviewed: true };
+    
+    // Filter out any slides that were absorbed into this one
+    const absorbedIds = new Set(editSlide.absorbedSlideIds || []);
+    let updated = slides.map((s, i) => (i === currentIndex ? slideToSave : s));
+    
+    if (absorbedIds.size > 0) {
+      updated = updated.filter((s) => s.id === editSlide.id || !absorbedIds.has(s.id));
+      saveBulkSlides(updated);
+    } else {
+      saveSingleSlide(slideToSave);
+    }
+
     setSlides(updated);
     setEditing(false);
     setEditSlide(null);
 
     // Move to next slide
-    if (currentIndex < slides.length - 1) {
+    if (currentIndex < updated.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
-
-    saveSlides(updated);
   };
 
   const handleApplyStyleToAll = () => {
@@ -335,8 +373,8 @@ export function SlideReviewer({
       updated[currentIndex] = result.slide;
       setSlides(updated);
       
-      // Also save if they click while reviewing
-      saveSlides(updated);
+      // Save this slide (without changing reviewed status)
+      saveSingleSlide(result.slide);
     }
   };
 
@@ -369,18 +407,27 @@ export function SlideReviewer({
     e.target.value = '';
   };
 
-  const handleFinish = async () => {
-    // Mark any remaining unreviewed slides as auto-reviewed
+  const handleApproveAllRemaining = async () => {
+    // Mark everything as reviewed
     const finalSlides = slides.map((s) => ({
       ...s,
       reviewed: true,
     }));
-    await saveSlides(finalSlides);
+    setSlides(finalSlides);
+    await saveBulkSlides(finalSlides);
+    setHoldProgress(0);
+    // This will trigger the "All slides reviewed" screen because allReviewed becomes true
+  };
+
+  const handleComplete = async () => {
     onComplete();
   };
 
+  const [showCompletionForce, setShowCompletionForce] = useState(false);
+  const [viewingSlidesAnyway, setViewingSlidesAnyway] = useState(false);
+
   // All slides reviewed screen
-  if (allReviewed || currentIndex >= slides.length) {
+  if ((allReviewed || currentIndex >= slides.length) && !editing && !viewingSlidesAnyway && !forceShowSlides) {
     const manualCount = slides.filter((s) => s.reviewed).length;
     const aiCount = 0; // Will be populated when AI styling is implemented
 
@@ -395,13 +442,25 @@ export function SlideReviewer({
           <span>&bull; {manualCount} styled by you</span>
           {aiCount > 0 && <span>&#x2728; {aiCount} styled by AI</span>}
         </div>
-        <Button
-          onClick={handleFinish}
-          size="lg"
-          className="bg-black text-white hover:bg-gray-800 text-lg px-8 py-6"
-        >
-          Continue to Audio &rarr;
-        </Button>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <Button
+            onClick={handleComplete}
+            size="lg"
+            className="bg-black text-white hover:bg-gray-800 text-lg px-8 py-6 w-full"
+          >
+            Continue to Audio &rarr;
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setViewingSlidesAnyway(true);
+              setCurrentIndex(0); // Go back to start
+            }}
+            className="text-gray-400 hover:text-black"
+          >
+            Review & Edit Slides
+          </Button>
+        </div>
       </div>
     );
   }
@@ -458,7 +517,7 @@ export function SlideReviewer({
 
       {/* Action buttons (when not editing) */}
       {!editing && (
-        <div className="flex justify-center gap-3 mb-8">
+        <div className="flex justify-center items-start gap-3 mb-8">
           <Button
             variant="outline"
             onClick={handleEdit}
@@ -467,26 +526,31 @@ export function SlideReviewer({
             <Pencil className="w-4 h-4" />
             Edit Slide
           </Button>
-          <Button
-            onClick={handleLooksGood}
-            onMouseDown={handleHoldStart}
-            onMouseUp={handleHoldEnd}
-            onMouseLeave={handleHoldEnd}
-            className="bg-black text-white hover:bg-gray-800 gap-2 relative overflow-hidden min-w-[160px]"
-          >
-            {holdProgress > 0 && (
-              <div
-                className="absolute inset-0 bg-green-500/40 transition-none"
-                style={{ width: `${holdProgress}%` }}
-              />
-            )}
-            <span className="relative z-10 flex items-center gap-2">
-              <Check className="w-4 h-4" />
-              {holdProgress > 0
-                ? `Approve all... ${Math.ceil((HOLD_DURATION - (holdProgress / 100) * HOLD_DURATION) / 1000)}s`
-                : 'Looks Good'}
-            </span>
-          </Button>
+          <div className="flex flex-col items-center gap-1.5">
+            <Button
+              onClick={handleLooksGood}
+              onMouseDown={handleHoldStart}
+              onMouseUp={handleHoldEnd}
+              onMouseLeave={handleHoldEnd}
+              className="bg-black text-white hover:bg-gray-800 gap-2 relative overflow-hidden min-w-[160px]"
+            >
+              {holdProgress > 0 && (
+                <div
+                  className="absolute inset-0 bg-green-500/40 transition-none"
+                  style={{ width: `${holdProgress}%` }}
+                />
+              )}
+              <span className="relative z-10 flex items-center gap-2">
+                <Check className="w-4 h-4" />
+                {holdProgress > 0
+                  ? `Approve all... ${Math.ceil((HOLD_DURATION - (holdProgress / 100) * HOLD_DURATION) / 1000)}s`
+                  : 'Looks Good'}
+              </span>
+            </Button>
+            <p className="text-[10px] text-gray-400 font-medium tracking-tight">
+              press & hold to approve all
+            </p>
+          </div>
         </div>
       )}
 
@@ -505,6 +569,20 @@ export function SlideReviewer({
             headshotInputRef={headshotInputRef}
             allSlides={slides}
             currentIndex={currentIndex}
+            onJumpToSlide={(index) => {
+              // If currently editing, we can either save or just jump
+              // For better UX, let's "Save and Jump"
+              if (editSlide) {
+                const slideToSave = { ...editSlide, reviewed: true };
+                const updated = [...slides];
+                updated[currentIndex] = slideToSave;
+                setSlides(updated);
+                saveSingleSlide(slideToSave);
+              }
+              setCurrentIndex(index);
+              setEditing(true);
+              setEditSlide({ ...slides[index] });
+            }}
           />
         </div>
       )}

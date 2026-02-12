@@ -29,6 +29,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (!response.ok) {
+      if (response.status === 429) {
+        return NextResponse.json(
+          { error: 'Pexels rate limit reached. Please wait a few minutes or skip images.' },
+          { status: 429 }
+        );
+      }
       throw new Error(`Pexels API error: ${response.status}`);
     }
 

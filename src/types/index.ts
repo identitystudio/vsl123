@@ -99,6 +99,15 @@ export interface ProjectSettings {
   selectedSlideIndex?: number;
 }
 
+export interface DbSlide {
+  id: string;
+  project_id: string;
+  order_index: number;
+  data: Slide;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface VslProject {
   id: string;
   user_id: string;

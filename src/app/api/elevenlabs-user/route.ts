@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+    const response = await fetch('https://api.elevenlabs.io/v1/user/subscription', {
       headers: {
         'xi-api-key': apiKey,
       },
@@ -28,26 +28,15 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
-    const voices = data.voices.map(
-      (voice: { voice_id: string; name: string; category: string }) => ({
-        voice_id: voice.voice_id,
-        name: voice.name,
-        category: voice.category,
-      })
-    );
-
-    // Sort: cloned voices first
-    voices.sort((a: { category: string }, b: { category: string }) => {
-      if (a.category === 'cloned' && b.category !== 'cloned') return -1;
-      if (a.category !== 'cloned' && b.category === 'cloned') return 1;
-      return 0;
+    return NextResponse.json({
+      character_count: data.character_count,
+      character_limit: data.character_limit,
+      remaining_characters: data.character_limit - data.character_count
     });
-
-    return NextResponse.json({ voices });
   } catch (error: unknown) {
-    console.error('ElevenLabs voices error:', error);
+    console.error('ElevenLabs user error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch voices' },
+      { error: 'Failed to fetch user info' },
       { status: 500 }
     );
   }

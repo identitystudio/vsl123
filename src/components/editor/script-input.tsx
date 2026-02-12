@@ -206,32 +206,27 @@ function MagicProgress({ progress }: { progress: number }) {
     return () => clearInterval(interval);
   }, [spawnConfetti]);
 
-  // Constant micro-movement: creep toward target, capped to never go far ahead
+  // Constant micro-movement: creep toward target faithfully
   useEffect(() => {
     const tick = setInterval(() => {
       setDisplayProgress((current) => {
         const target = targetRef.current;
         const gap = target - current;
 
-        // Cap: never creep more than 4% ahead of the real target
-        const maxCreep = target + 4;
-        if (current >= maxCreep) {
-          return current; // hold here, don't go further
-        }
-
-        if (gap <= 0.05) {
-          // Creep slowly past target (up to cap)
-          if (current < maxCreep && current < 96) {
-            return current + 0.03 + Math.random() * 0.04;
+        // If we are close or behind target, keep creeping forward slowly (0.01% - 0.05% per tick)
+        // This ensures the bar NEVER stops moving, even during long waits.
+        if (gap <= 0.1) {
+          if (current < 98) {
+            return current + 0.02 + Math.random() * 0.03;
           }
           return current;
         }
 
-        // Close gap smoothly — faster when gap is big, slower when small
-        const step = Math.max(0.1, gap * 0.08 + Math.random() * 0.15);
+        // Move faster if there's a large gap
+        const step = Math.max(0.1, gap * 0.05 + Math.random() * 0.1);
         return Math.min(current + step, target);
       });
-    }, 80);
+    }, 100);
     return () => clearInterval(tick);
   }, []);
 
@@ -380,9 +375,37 @@ export function ScriptInput({
 }: ScriptInputProps) {
   const [script, setScript] = useState(initialScript);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showOptions, setShowOptions] = useState(false);
   const updateProject = useUpdateProject();
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setGenerating(false);
+    setProgress(0);
+    toast.info('Generation cancelled');
+  }, []);
+
+  const handleSaveScript = async () => {
+    if (!script.trim()) return;
+    setSaving(true);
+    try {
+      await updateProject.mutateAsync({
+        projectId,
+        updates: { original_script: script },
+      });
+      toast.success('Script saved');
+    } catch {
+      toast.error('Failed to save script');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAIGenerate = async () => {
     setShowOptions(false);
@@ -393,9 +416,19 @@ export function ScriptInput({
 
     setGenerating(true);
     setProgress(5);
+    
+    // Setup cancellation
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     console.log('🚀 AI Generation started: Initializing script processing...');
 
     try {
+      // Helper to check for cancellation
+      const checkCancelled = () => {
+        if (signal.aborted) throw new Error('AbortError');
+      };
       // Save script to project
       await updateProject.mutateAsync({
         projectId,
@@ -404,11 +437,14 @@ export function ScriptInput({
 
       setProgress(10);
 
+      checkCancelled();
+
       // Step 1: Split script into slides
       const splitResponse = await fetch('/api/split-script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script }),
+        signal,
       });
 
       if (!splitResponse.ok) {
@@ -430,12 +466,21 @@ export function ScriptInput({
 
       // Create initial slides from AI response
       const slides: Slide[] = [];
+      const seenTexts = new Set<string>();
+      
       for (const scene of splitData.scenes) {
+        if (!scene.slides) continue;
         for (const slideData of scene.slides) {
+          // Skip if this exact text was just added (prevents pairwise duplication)
+          if (seenTexts.has(slideData.fullScriptText.trim().toLowerCase())) {
+            continue;
+          }
+          seenTexts.add(slideData.fullScriptText.trim().toLowerCase());
+          
           slides.push(
             createSlideFromText(
               slideData.fullScriptText,
-              slideData.hasImage,
+              true,
               slideData.imageKeyword,
               scene.sceneNumber,
               scene.title,
@@ -447,6 +492,8 @@ export function ScriptInput({
 
       setProgress(35);
       console.log(`🧠 AI Splitter complete. Now designing visual styles for ${slides.length} slides...`);
+
+      checkCancelled();
 
       // Step 2: AI Style Director - style all slides at once
       const styleResponse = await fetch('/api/style-slides', {
@@ -463,6 +510,7 @@ export function ScriptInput({
             imageKeyword: s.imageKeyword,
           })),
         }),
+        signal,
       });
 
       if (styleResponse.status === 402) {
@@ -620,72 +668,96 @@ export function ScriptInput({
         (s) => s.imageKeyword && !s.backgroundImage?.url
       );
 
-      console.log(`🖼️ Attempting to fetch images for ${slidesNeedingImages.length} slides...`);
+      const imageCache = new Map<string, any>();
+      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+      let pexelsBlocked = false;
+      let pixabayBlocked = false;
 
-      // Fetch images in parallel (max 5 at a time)
-      for (let i = 0; i < slidesNeedingImages.length; i += 5) {
-        const batch = slidesNeedingImages.slice(i, i + 5);
-        const imagePromises = batch.map(async (slide) => {
-          try {
-            const imgResponse = await fetch('/api/pexels-search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query: slide.imageKeyword, perPage: 1 }),
-            });
-            if (imgResponse.ok) {
-              const imgData = await imgResponse.json();
-              if (imgData.photos?.[0]?.url) {
-                console.log(`🖼️ Pexels fetch SUCCESS for "${slide.imageKeyword}":`, imgData.photos[0].url);
-                return { slideId: slide.id, url: imgData.photos[0].url };
-              } else {
-                console.warn(`⚠️ Pexels returned 0 images for: "${slide.imageKeyword}"`);
+      for (let i = 0; i < slidesNeedingImages.length; i++) {
+        checkCancelled();
+        const slide = slidesNeedingImages[i];
+        
+        try {
+          let imgData = imageCache.get(slide.imageKeyword!);
+
+          if (!imgData) {
+            // Priority 1: Pexels
+            if (!pexelsBlocked) {
+              // Add a small delay between every request to satisfy Pexels
+              if (i > 0) await sleep(450); 
+
+              const imgResponse = await fetch('/api/pexels-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: slide.imageKeyword, perPage: i === 0 ? 3 : 1 }),
+                signal,
+              });
+
+              if (imgResponse.status === 429) {
+                console.warn('⚠️ Pexels rate limit reached. Switching to Pixabay fallback.');
+                pexelsBlocked = true;
+              } else if (imgResponse.ok) {
+                imgData = await imgResponse.json();
+                imageCache.set(slide.imageKeyword!, imgData);
               }
-            } else {
-              console.error(`❌ Pexels API error for "${slide.imageKeyword}":`, imgResponse.status);
             }
-            return null;
-          } catch {
-            return null;
+
+            // Priority 2: Pixabay Fallback (if Pexels failed or is already blocked)
+            if ((!imgData || !imgData.photos?.[0]?.url) && !pixabayBlocked) {
+              if (i > 0) await sleep(200); // Pixabay is less strict so we can go faster
+              const pixResponse = await fetch('/api/pixabay-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: slide.imageKeyword }),
+                signal,
+              });
+
+              if (pixResponse.ok) {
+                imgData = await pixResponse.json();
+                imageCache.set(slide.imageKeyword!, imgData);
+              } else if (pixResponse.status === 429 || pixResponse.status === 500) {
+                // If 500 probably key missing or blocked
+                console.warn('⚠️ Pixabay rate limit reached or API error. No more Pixabay images.');
+                pixabayBlocked = true;
+              }
+            }
           }
-        });
 
-        const results = await Promise.all(imagePromises);
-
-        // Apply fetched images
-        for (const result of results) {
-          if (result) {
-            const slideIndex = styledSlides.findIndex((s) => s.id === result.slideId);
+          if (imgData && imgData.photos?.[0]?.url) {
+            const slideIndex = styledSlides.findIndex((s) => s.id === slide.id);
             if (slideIndex !== -1) {
-              const slide = styledSlides[slideIndex];
-              if (!slide.backgroundImage) {
-                slide.backgroundImage = { url: '', opacity: 60, blur: 8, displayMode: 'blurred' };
+              const s = styledSlides[slideIndex];
+              if (!s.backgroundImage) {
+                s.backgroundImage = { url: '', opacity: 60, blur: 8, displayMode: 'blurred' };
               }
-              slide.backgroundImage.url = result.url;
-              slide.hasBackgroundImage = true;
+              s.backgroundImage.url = imgData.photos[0].url;
+              s.hasBackgroundImage = true;
 
-              if (slide.style.background === 'white' || slide.style.background === 'dark' || slide.style.background === 'gradient') {
-                const useSplit = slideIndex % 2 === 0;
-                if (useSplit) {
-                   slide.style.background = 'split';
-                   slide.style.textColor = 'black';
-                   slide.backgroundImage.displayMode = 'split';
-                   slide.backgroundImage.opacity = 100;
-                   slide.backgroundImage.blur = 0;
-                   slide.backgroundImage.imagePositionY = 35;
-                } else {
-                   slide.style.background = 'image';
-                   slide.style.textColor = 'white';
-                   slide.backgroundImage.displayMode = 'blurred';
-                   slide.backgroundImage.opacity = 60;
-                }
+              // Auto-apply layout based on index for variety
+              const useSplit = slideIndex % 2 === 0; // Rotate 50/50 as per new prompt
+              if (useSplit) {
+                 s.style.background = 'split';
+                 s.style.textColor = 'black';
+                 s.backgroundImage.displayMode = 'split';
+                 s.backgroundImage.opacity = 100;
+                 s.backgroundImage.blur = 0;
+                 s.backgroundImage.imagePositionY = 35;
+              } else {
+                 s.style.background = 'image';
+                 s.style.textColor = 'white';
+                 s.backgroundImage.displayMode = 'blurred';
+                 s.backgroundImage.opacity = 60;
               }
             }
           }
+        } catch (err) {
+          console.error(`Failed to fetch image for: ${slide.imageKeyword}`, err);
         }
 
-        // Update progress based on image fetching
-        const imageProgress = Math.min(85, 60 + (i / slidesNeedingImages.length) * 25);
-        setProgress(imageProgress);
+        // Update progress granularly for every single image
+        const totalSteps = slidesNeedingImages.length;
+        const currentProgress = 60 + ((i + 1) / totalSteps) * 25;
+        setProgress(currentProgress);
       }
 
       setProgress(88);
@@ -735,14 +807,19 @@ export function ScriptInput({
       console.log('✅ AI Designing complete! All slides have been styled and images fetched.');
       onSlidesGenerated(styledSlides);
     } catch (err: any) {
+      if (err.name === 'AbortError' || err.message === 'AbortError') {
+        console.log('Generation aborted by user');
+        return;
+      }
       const msg = err instanceof Error ? err.message : 'Unknown error';
       if (msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('billing')) {
         console.error('❌ CRITICAL ERROR: Could not use AI because of credit/billing issues.');
       }
       toast.error(`Failed to generate slides: ${msg}`);
-      console.error('Slide generation error:', err);
       setGenerating(false);
       setProgress(0);
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
@@ -825,17 +902,37 @@ export function ScriptInput({
 
         {/* Generate button or magical progress */}
         {generating ? (
-          <MagicProgress progress={progress} />
+          <div className="w-full space-y-4">
+            <MagicProgress progress={progress} />
+            <Button
+              variant="ghost"
+              onClick={handleCancel}
+              className="w-full text-gray-400 hover:text-red-500 hover:bg-red-50 text-sm transition-all"
+            >
+              Cancel Generation
+            </Button>
+          </div>
         ) : (
-          <Button
-            onClick={handleStartGenerating}
-            size="lg"
-            className="w-full text-lg py-6 bg-black text-white hover:bg-gray-800 rounded-xl gap-2"
-            disabled={!script.trim()}
-          >
-            <Sparkles className="w-5 h-5" />
-            Generate Slides &rarr;
-          </Button>
+          <div className="w-full space-y-3">
+            <Button
+              onClick={handleStartGenerating}
+              size="lg"
+              className="w-full text-lg py-6 bg-black text-white hover:bg-gray-800 rounded-xl gap-2"
+              disabled={!script.trim()}
+            >
+              <Sparkles className="w-5 h-5" />
+              Generate Slides &rarr;
+            </Button>
+            
+            <Button
+              variant="ghost"
+              onClick={handleSaveScript}
+              disabled={!script.trim() || saving}
+              className="w-full text-gray-400 hover:text-black hover:bg-transparent text-sm"
+            >
+              {saving ? 'Saving...' : 'Save script draft'}
+            </Button>
+          </div>
         )}
 
         {/* Generation Options Dialog */}
@@ -883,7 +980,7 @@ export function ScriptInput({
 
         {!generating && (
           <p className="text-sm text-gray-400 text-center">
-            Text-first VSL: Only 30-40% of slides get subtle background images
+            Mark EVERY slide (100%) as hasImage:true to ensure a fully cinematic experience.
           </p>
         )}
       </div>

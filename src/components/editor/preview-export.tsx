@@ -21,6 +21,181 @@ interface PreviewExportProps {
   projectId: string;
   projectName: string;
   slides: Slide[];
+  onSlideClick?: (index: number) => void;
+}
+
+// Magical rotating messages — tailored for Export phase
+const EXPORT_MESSAGES = [
+  { text: 'Finalizing your conversion machine...', emoji: '⚙️' },
+  { text: 'Turning pixels into profits. Almost there.', emoji: '💸' },
+  { text: 'Quality check: Making sure every transition is perfect.', emoji: '✨' },
+  { text: 'Readying the "Beast" for the final render.', emoji: '🚀' },
+  { text: 'Your message is being carved into the final frames.', emoji: '💎' },
+  { text: 'Final exports are where the magic truly sets in.', emoji: '🪄' },
+  { text: 'Imagine the impact this will have on your audience...', emoji: '🎯' },
+  { text: 'The wait is almost over. Your funnel is about to go live.', emoji: '🏁' },
+  { text: 'Your competitors are still fumbling. You\'re about to launch.', emoji: '🔥' },
+  { text: 'Encoding at hyper-speed. Hang tight.', emoji: '⚡' },
+  { text: 'A work of art takes time, but we\'re making it record speed.', emoji: '🎨' },
+  { text: 'Your words, now perfectly synced with cinematic slides.', emoji: '🎬' },
+];
+
+interface ConfettiPiece {
+  id: number;
+  x: number;
+  color: string;
+  size: number;
+  angle: number;
+  dx: number;
+  dy: number;
+  opacity: number;
+  shape: 'circle' | 'square' | 'star';
+}
+
+let confettiIdCounter = 0;
+
+function MagicProgress({ progress }: { progress: number }) {
+  const [msgIndex, setMsgIndex] = useState(0);
+  const [fade, setFade] = useState(true);
+  const shuffledRef = useRef<typeof EXPORT_MESSAGES>([]);
+  const [displayProgress, setDisplayProgress] = useState(progress);
+  const targetRef = useRef(progress);
+  const [confetti, setConfetti] = useState<ConfettiPiece[]>([]);
+  const prevProgressRef = useRef(progress);
+
+  useEffect(() => {
+    shuffledRef.current = [...EXPORT_MESSAGES].sort(() => Math.random() - 0.5);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setMsgIndex((i) => (i + 1) % EXPORT_MESSAGES.length);
+        setFade(true);
+      }, 400);
+    }, 5500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const spawnConfetti = useCallback((atProgress: number, count: number) => {
+    const colors = ['#6366f1', '#818cf8', '#4f46e5', '#4338ca', '#3730a3', '#F5D300', '#C0C0C0'];
+    const pieces: ConfettiPiece[] = [];
+    for (let i = 0; i < count; i++) {
+      pieces.push({
+        id: ++confettiIdCounter,
+        x: Math.max(5, Math.min(95, atProgress - 5 + Math.random() * 10)),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 4 + Math.random() * 6,
+        angle: Math.random() * 360,
+        dx: (Math.random() - 0.5) * 120,
+        dy: -(40 + Math.random() * 80),
+        opacity: 1,
+        shape: (['circle', 'square', 'star'] as const)[Math.floor(Math.random() * 3)],
+      });
+    }
+    setConfetti((prev) => [...prev, ...pieces]);
+    setTimeout(() => {
+      setConfetti((prev) => prev.filter((p) => !pieces.some((np) => np.id === p.id)));
+    }, 1800);
+  }, []);
+
+  useEffect(() => {
+    const jump = progress - prevProgressRef.current;
+    targetRef.current = progress;
+    prevProgressRef.current = progress;
+    if (jump >= 5) {
+      spawnConfetti(progress, Math.min(Math.floor(jump * 1.5), 30));
+    }
+  }, [progress, spawnConfetti]);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setDisplayProgress((current) => {
+        const target = targetRef.current;
+        const gap = target - current;
+        if (gap <= 0.1) {
+          if (current < 99 && current > 0) return current + 0.01 + Math.random() * 0.02; // Keep it alive
+          return current;
+        }
+        const step = Math.max(0.1, gap * 0.05 + Math.random() * 0.1);
+        return Math.min(current + step, target);
+      });
+    }, 100);
+    return () => clearInterval(tick);
+  }, []);
+
+  const msg = shuffledRef.current[msgIndex] || EXPORT_MESSAGES[msgIndex];
+
+  return (
+    <div className="w-full space-y-6 py-4">
+      <div className="relative w-full h-4 bg-gray-100 rounded-full overflow-visible border border-gray-200">
+        <div className="relative w-full h-full rounded-full overflow-hidden">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${displayProgress}%`,
+              background: 'linear-gradient(90deg, #4f46e5 0%, #818cf8 30%, #4f46e5 50%, #6366f1 70%, #4f46e5 100%)',
+              backgroundSize: '200% 100%',
+              animation: 'export-shimmer 2s linear infinite',
+              boxShadow: '0 0 10px rgba(79, 70, 229, 0.4)',
+              transition: 'width 0.1s linear',
+            }}
+          />
+        </div>
+
+        {confetti.map((piece) => (
+          <div
+            key={piece.id}
+            className="absolute pointer-events-none"
+            style={{
+              left: `${piece.x}%`,
+              top: '50%',
+              animation: `confetti-fly 1.6s ease-out forwards`,
+              '--dx': `${piece.dx}px`,
+              '--dy': `${piece.dy}px`,
+            } as any}
+          >
+            <div
+              style={{
+                width: piece.size,
+                height: piece.size,
+                backgroundColor: piece.color,
+                borderRadius: piece.shape === 'circle' ? '50%' : '2px',
+                transform: `rotate(${piece.angle}deg)`,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="text-center min-h-[80px] flex flex-col items-center justify-center gap-2">
+        <div 
+          className="flex items-center gap-3 transition-opacity duration-400"
+          style={{ opacity: fade ? 1 : 0 }}
+        >
+          <span className="text-2xl">{msg.emoji}</span>
+          <p className="text-lg text-gray-700 italic font-medium leading-tight">
+            "{msg.text}"
+          </p>
+        </div>
+        <p className="text-sm font-bold text-indigo-600 animate-pulse">
+          {Math.floor(displayProgress)}% COMPLETE
+        </p>
+      </div>
+
+      <style>{`
+        @keyframes export-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes confetti-fly {
+          0% { transform: translate(0, 0) scale(1); opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) scale(0) rotate(360deg); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
 }
 
 // Helper to handle rate limiting with exponential backoff
@@ -50,6 +225,7 @@ export function PreviewExport({
   projectId,
   projectName,
   slides,
+  onSlideClick,
 }: PreviewExportProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -841,8 +1017,13 @@ export function PreviewExport({
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex flex-col items-center gap-6">
         {/* Slide preview */}
-        <div className="relative">
+        <div className="relative group cursor-pointer" onClick={() => onSlideClick?.(currentIndex)}>
           <SlidePreview slide={currentSlide} scale={1} />
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+            <div className="opacity-0 group-hover:opacity-100 bg-white/90 text-black px-3 py-1.5 rounded-full text-sm font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all">
+              Click to Edit Slide {currentIndex + 1}
+            </div>
+          </div>
           <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
             {currentIndex + 1} / {slides.length}
           </div>
@@ -911,11 +1092,8 @@ export function PreviewExport({
 
         {/* Export */}
         {exporting ? (
-          <div className="w-full max-w-sm space-y-3">
-            <Progress value={exportProgress} className="h-2" />
-            <p className="text-sm text-center text-gray-500">
-              Exporting slides... {exportProgress}%
-            </p>
+          <div className="w-full max-w-lg bg-white/50 backdrop-blur-sm border border-gray-200 rounded-2xl p-8 shadow-xl animate-in fade-in zoom-in duration-500">
+            <MagicProgress progress={exportProgress} />
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4">
@@ -992,177 +1170,76 @@ export function PreviewExport({
 
             <div className="flex flex-col gap-3 w-full max-w-md">
               <Button
-                onClick={() => {
-                  const vpsIp = '76.13.49.238'; 
+                onClick={async () => {
+                  if (exporting) return;
+                  setExporting(true);
+                  setExportProgress(10);
 
-                  const handleVpsExport = async () => {
-                    if (exporting) return;
-                    setExporting(true);
-                    setExportProgress(10); // Initial
+                  try {
+                    toast.info('Preparing slides for VPS render...');
+                    const slidesWithHtml = [];
+                    const React = await import('react');
+                    const ReactDOM = await import('react-dom/client');
 
-                    try {
-                      toast.info('Preparing slides for VPS render...');
-
-                      const slidesWithHtml = [];
-                      const React = await import('react');
-                      const ReactDOM = await import('react-dom/client');
-
-                      // Render each slide to HTML string locally first
-                      for (let i = 0; i < slides.length; i++) {
-                        const slide = slides[i];
-                        
-                        // Create off-screen container
-                        const wrapper = document.createElement('div');
-                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
-                        const container = document.createElement('div');
-                        container.style.cssText = 'width: 1920px; height: 1080px;';
-                        wrapper.appendChild(container);
-                        document.body.appendChild(wrapper);
-
-                        const root = ReactDOM.createRoot(container);
-                        
-                        // Sync Render
-                        await new Promise<void>((resolve) => {
-                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
-                          // Brief wait for flush
-                          setTimeout(resolve, 100); 
-                        });
-
-                        const renderedElement = container.firstElementChild as HTMLElement;
-                        if (!renderedElement) throw new Error('Failed to render slide locally');
-
-                        slidesWithHtml.push({
-                          audioUrl: slide.audioUrl,
-                          // Send the raw HTML content of the slide component
-                          htmlContent: renderedElement.outerHTML
-                        });
-
-                        // Cleanup DOM
-                        root.unmount();
-                        document.body.removeChild(wrapper);
-                      }
-
-                      toast.info('Sending project to VPS render server...');
-
-                      const response = await fetch(`/api/vps-render?mode=render`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          slides: slidesWithHtml,
-                          projectName
-                        }),
+                    for (let i = 0; i < slides.length; i++) {
+                      const slide = slides[i];
+                      const wrapper = document.createElement('div');
+                      wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+                      const container = document.createElement('div');
+                      container.style.cssText = 'width: 1920px; height: 1080px;';
+                      wrapper.appendChild(container);
+                      document.body.appendChild(wrapper);
+                      const root = ReactDOM.createRoot(container);
+                      await new Promise<void>((resolve) => {
+                        root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                        setTimeout(resolve, 100); 
                       });
-
-                      if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(`VPS Server Error: ${errText}`);
-                      }
-
-                      setExportProgress(50);
-                      toast.success('Rendering on VPS... (This may take a minute)');
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.mp4`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      setExportProgress(100);
-                      toast.success('Video downloaded from VPS!');
-
-                    } catch (error) {
-                      console.error(error);
-                      toast.error(`VPS Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    } finally {
-                      setExporting(false);
-                      setExportProgress(0);
-                    }
-                  };
-
-                  const handleVpsZipExport = async () => {
-                    if (exporting) return;
-                    setExporting(true);
-                    setExportProgress(10);
-
-                    try {
-                      toast.info('Preparing slides for VPS ZIP export...');
-
-                      const slidesWithHtml = [];
-                      const React = await import('react');
-                      const ReactDOM = await import('react-dom/client');
-
-                      for (let i = 0; i < slides.length; i++) {
-                        const slide = slides[i];
-                        const wrapper = document.createElement('div');
-                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
-                        const container = document.createElement('div');
-                        container.style.cssText = 'width: 1920px; height: 1080px;';
-                        wrapper.appendChild(container);
-                        document.body.appendChild(wrapper);
-
-                        const root = ReactDOM.createRoot(container);
-                        await new Promise<void>((resolve) => {
-                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
-                          setTimeout(resolve, 100); 
-                        });
-
-                        const renderedElement = container.firstElementChild as HTMLElement;
-                        if (!renderedElement) throw new Error('Failed to render slide locally');
-
-                        slidesWithHtml.push({
-                          audioUrl: slide.audioUrl,
-                          htmlContent: renderedElement.outerHTML
-                        });
-
-                        root.unmount();
-                        document.body.removeChild(wrapper);
-                      }
-
-                      toast.info('Sending project to VPS ZIP server...');
-
-                      const response = await fetch(`http://${vpsIp}:3001/render-zip`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                      const renderedElement = container.firstElementChild as HTMLElement;
+                      if (!renderedElement) throw new Error('Failed to render slide locally');
+                      slidesWithHtml.push({
+                        audioUrl: slide.audioUrl,
+                        htmlContent: renderedElement.outerHTML
                       });
-
-                      if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(`VPS Server Error: ${errText}`);
-                      }
-
-                      setExportProgress(50);
-                      toast.success('Zipping on VPS... (This may take a minute)');
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.zip`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      setExportProgress(100);
-                      toast.success('ZIP downloaded from VPS!');
-
-                    } catch (error) {
-                      console.error(error);
-                      toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    } finally {
-                      setExporting(false);
-                      setExportProgress(0);
+                      root.unmount();
+                      document.body.removeChild(wrapper);
                     }
-                  };
-                  
-                  handleVpsExport();
+
+                    toast.info('Sending project to VPS...');
+                    const startRes = await fetch(`/api/vps-render?mode=render`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                    });
+
+                    if (!startRes.ok) throw new Error(await startRes.text());
+                    const { jobId } = await startRes.json();
+                    
+                    let completed = false;
+                    while (!completed) {
+                      await new Promise(r => setTimeout(r, 3000));
+                      const statusRes = await fetch(`/api/vps-render?jobId=${jobId}`);
+                      if (!statusRes.ok) throw new Error('Failed to check job status');
+                      const job = await statusRes.json();
+                      
+                      if (job.status === 'completed') {
+                        completed = true;
+                        setExportProgress(100);
+                        toast.success('Video Ready! Downloading...');
+                        window.location.href = `/api/vps-render?jobId=${jobId}&download=${job.downloadUrl.split('/').pop()}`;
+                      } else if (job.status === 'failed') {
+                        throw new Error(`VPS Job Failed: ${job.error}`);
+                      } else {
+                        setExportProgress(job.progress || 50);
+                        toast.info(`VPS: ${job.status.replace('_', ' ')} (${job.progress || 0}%)`, { id: 'vps-progress' });
+                      }
+                    }
+                  } catch (error) {
+                    console.error(error);
+                    toast.error(`VPS Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                  } finally {
+                    setExporting(false);
+                    setExportProgress(0);
+                  }
                 }}
                 size="lg"
                 className="bg-indigo-600 text-white hover:bg-indigo-700 gap-2 text-lg px-8 py-6 w-full"
@@ -1173,86 +1250,75 @@ export function PreviewExport({
               
               <Button
                 onClick={async () => {
-                   const vpsIp = '76.13.49.238'; 
-                   
-                   const handleVpsZipExport = async () => {
-                    if (exporting) return;
-                    setExporting(true);
-                    setExportProgress(10);
+                  if (exporting) return;
+                  setExporting(true);
+                  setExportProgress(10);
 
-                    try {
-                      toast.info('Preparing slides for VPS ZIP export...');
+                  try {
+                    toast.info('Preparing slides for VPS ZIP...');
+                    const slidesWithHtml = [];
+                    const React = await import('react');
+                    const ReactDOM = await import('react-dom/client');
 
-                      const slidesWithHtml = [];
-                      const React = await import('react');
-                      const ReactDOM = await import('react-dom/client');
-
-                      for (let i = 0; i < slides.length; i++) {
-                        const slide = slides[i];
-                        const wrapper = document.createElement('div');
-                        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
-                        const container = document.createElement('div');
-                        container.style.cssText = 'width: 1920px; height: 1080px;';
-                        wrapper.appendChild(container);
-                        document.body.appendChild(wrapper);
-
-                        const root = ReactDOM.createRoot(container);
-                        await new Promise<void>((resolve) => {
-                          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
-                          setTimeout(resolve, 100); 
-                        });
-
-                        const renderedElement = container.firstElementChild as HTMLElement;
-                        if (!renderedElement) throw new Error('Failed to render slide locally');
-
-                        slidesWithHtml.push({
-                          audioUrl: slide.audioUrl,
-                          htmlContent: renderedElement.outerHTML
-                        });
-
-                        root.unmount();
-                        document.body.removeChild(wrapper);
-                      }
-
-                      toast.info('Sending project to VPS ZIP server...');
-
-                      const response = await fetch(`/api/vps-render?mode=render-zip`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                    for (let i = 0; i < slides.length; i++) {
+                      const slide = slides[i];
+                      const wrapper = document.createElement('div');
+                      wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+                      const container = document.createElement('div');
+                      container.style.cssText = 'width: 1920px; height: 1080px;';
+                      wrapper.appendChild(container);
+                      document.body.appendChild(wrapper);
+                      const root = ReactDOM.createRoot(container);
+                      await new Promise<void>((resolve) => {
+                        root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                        setTimeout(resolve, 100); 
                       });
-
-                      if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(`VPS Server Error: ${errText}`);
-                      }
-
-                      setExportProgress(50);
-                      toast.success('Zipping on VPS... (This may take a minute)');
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${projectName.replace(/\s+/g, '_')}_VPS.zip`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      setExportProgress(100);
-                      toast.success('ZIP downloaded from VPS!');
-
-                    } catch (error) {
-                      console.error(error);
-                      toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    } finally {
-                      setExporting(false);
-                      setExportProgress(0);
+                      const renderedElement = container.firstElementChild as HTMLElement;
+                      if (!renderedElement) throw new Error('Failed to render slide locally');
+                      slidesWithHtml.push({
+                        audioUrl: slide.audioUrl,
+                        htmlContent: renderedElement.outerHTML
+                      });
+                      root.unmount();
+                      document.body.removeChild(wrapper);
                     }
-                  };
-                  
-                  handleVpsZipExport();
+
+                    toast.info('Sending project to VPS ZIP...');
+                    const startRes = await fetch(`/api/vps-render?mode=render-zip`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                    });
+
+                    if (!startRes.ok) throw new Error(await startRes.text());
+                    const { jobId } = await startRes.json();
+                    
+                    let completed = false;
+                    while (!completed) {
+                      await new Promise(r => setTimeout(r, 3000));
+                      const statusRes = await fetch(`/api/vps-render?jobId=${jobId}`);
+                      if (!statusRes.ok) throw new Error('Failed to check job status');
+                      const job = await statusRes.json();
+                      
+                      if (job.status === 'completed') {
+                        completed = true;
+                        setExportProgress(100);
+                        toast.success('ZIP Ready! Downloading...');
+                        window.location.href = `/api/vps-render?jobId=${jobId}&download=${job.downloadUrl.split('/').pop()}`;
+                      } else if (job.status === 'failed') {
+                        throw new Error(`VPS Job Failed: ${job.error}`);
+                      } else {
+                        setExportProgress(job.progress || 50);
+                        toast.info(`VPS: ${job.status.replace('_', ' ')} (${job.progress || 0}%)`, { id: 'vps-progress-zip' });
+                      }
+                    }
+                  } catch (error) {
+                    console.error(error);
+                    toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                  } finally {
+                    setExporting(false);
+                    setExportProgress(0);
+                  }
                 }}
                 size="lg"
                 className="bg-gray-800 text-white hover:bg-gray-900 gap-2 text-lg px-8 py-6 w-full"

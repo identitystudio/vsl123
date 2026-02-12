@@ -56,12 +56,12 @@ async function processChunk(
           content: `Split these VSL script lines into slides grouped by scenes. This is chunk ${chunkIndex + 1} of ${totalChunks}.
 
 RULES:
-- Each slide = 1-2 lines (keep short, max ~12 words per slide)
+- Each slide = 1-2 lines (keep short)
+- DO NOT repeat the same text across multiple slides. Each unique line from the script should appear exactly once in the entire output.
 - Group into scenes (Hook, Problem, Agitation, Solution, Authority, Proof, CTA, Close)
-- Mark ~50% of slides hasImage:true to ensure a highly visual experience.
-- Keep original text exactly as written
-- IMPORTANT: For EVERY slide, provide an imageKeyword — a descriptive 3-5 word cinematic search term. Be specific about the subject, lighting, and mood. Example: "depressed man sitting at dark kitchen table rainy night" instead of just "sad man".
-- Return ONLY valid JSON array of scenes, no markdown
+- Mark EVERY slide (100%) as hasImage:true
+- IMPORTANT: For EVERY slide, provide an imageKeyword — a descriptive cinematic stock photo search term.
+- Return ONLY a valid JSON array of scenes.
 
 Format: [{"sceneNumber":1,"title":"Scene Name","emotion":"hook","slides":[{"fullScriptText":"text here","hasImage":true,"imageKeyword":"visual search term"}]}]
 

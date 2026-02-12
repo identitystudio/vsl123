@@ -47,6 +47,7 @@ interface SlideEditPanelProps {
   headshotInputRef?: React.RefObject<HTMLInputElement | null>;
   allSlides?: Slide[];
   currentIndex?: number;
+  onJumpToSlide?: (index: number) => void;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -240,6 +241,7 @@ export function SlideEditPanel({
   headshotInputRef,
   allSlides = [],
   currentIndex = 0,
+  onJumpToSlide,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -1239,71 +1241,81 @@ export function SlideEditPanel({
             </p>
           </div>
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-[400px] overflow-y-auto p-2 bg-gray-50 rounded-lg thin-scrollbar">
-            {allSlides.map((s: Slide, idx: number) => {
-              // If applyToAll is checked and this slide is after current, preview with current style
-              const previewSlide = (applyToAll && idx > currentIndex) 
-                ? { 
-                    ...s, 
-                    style: { ...slide.style }, 
-                    hasBackgroundImage: slide.hasBackgroundImage,
-                    backgroundImage: slide.backgroundImage,
-                    headshot: slide.headshot,
-                    isInfographic: slide.isInfographic,
-                    infographicVisual: slide.infographicVisual,
-                    infographicCaptions: s.infographicCaptions || [s.fullScriptText]
-                  } 
-                : (idx === currentIndex ? slide : s);
+            {allSlides
+              .filter((s: Slide) => {
+                // Don't show slides that have been absorbed by an infographic
+                const isAbsorbed = allSlides.some(ps => ps.absorbedSlideIds?.includes(s.id));
+                return !isAbsorbed;
+              })
+              .map((s: Slide, idx: number) => {
+                // Map the original index for jumping
+                const originalIndex = allSlides.findIndex(as => as.id === s.id);
+                // If applyToAll is checked and this slide is after current, preview with current style
+                const previewSlide = (applyToAll && originalIndex > currentIndex) 
+                  ? { 
+                      ...s, 
+                      style: { ...slide.style }, 
+                      hasBackgroundImage: slide.hasBackgroundImage,
+                      backgroundImage: slide.backgroundImage,
+                      headshot: slide.headshot,
+                      isInfographic: slide.isInfographic,
+                      infographicVisual: slide.infographicVisual,
+                      infographicCaptions: s.infographicCaptions || [s.fullScriptText]
+                    } 
+                  : (originalIndex === currentIndex ? slide : s);
 
-              return (
-                <div 
-                  key={s.id} 
-                  className={`relative aspect-video rounded border overflow-hidden bg-white group cursor-default ${
-                    idx === currentIndex ? 'ring-2 ring-black' : 'border-gray-200 shadow-sm'
-                  }`}
-                >
-                  <div className="absolute inset-0 scale-[0.14] origin-top-left w-[640px] h-[360px]">
-                    <div
-                      className="w-full h-full relative"
-                      style={{
-                        background: previewSlide.style.background === 'gradient' && previewSlide.style.gradient
-                          ? previewSlide.style.gradient
-                          : previewSlide.style.background === 'dark' ? '#1a1a1a' : '#ffffff',
-                      }}
-                    >
-                      {previewSlide.hasBackgroundImage && previewSlide.backgroundImage?.url && (
-                        <div 
-                          className="absolute inset-0 bg-cover bg-center"
-                          style={{ backgroundImage: `url(${previewSlide.backgroundImage.url})`, opacity: 0.6 }}
-                        />
-                      )}
-                      {previewSlide.style.background === 'split' && previewSlide.backgroundImage?.url && (
-                         <div 
-                          className="absolute top-0 left-0 right-0 bg-cover bg-center"
-                          style={{ 
-                            height: `${previewSlide.style.splitRatio || 50}%`,
-                            backgroundImage: `url(${previewSlide.backgroundImage.url})` 
-                          }}
-                        />
-                      )}
-                      
-                      <div className="absolute inset-0 flex items-center justify-center p-4">
-                        <div className="text-[32px] font-bold text-center leading-tight truncate-3-lines" style={{ color: previewSlide.style.textColor === 'white' ? 'white' : 'black' }}>
-                          {previewSlide.fullScriptText.length > 50 ? previewSlide.fullScriptText.slice(0, 50) + '...' : previewSlide.fullScriptText}
+                return (
+                  <button 
+                    key={s.id} 
+                    type="button"
+                    onClick={() => onJumpToSlide?.(originalIndex)}
+                    className={`relative aspect-video rounded border overflow-hidden bg-white group cursor-pointer transition-all hover:ring-2 hover:ring-black/20 ${
+                      originalIndex === currentIndex ? 'ring-2 ring-black' : 'border-gray-200 shadow-sm'
+                    }`}
+                  >
+                    <div className="absolute inset-0 scale-[0.14] origin-top-left w-[640px] h-[360px]">
+                      <div
+                        className="w-full h-full relative"
+                        style={{
+                          background: previewSlide.style.background === 'gradient' && previewSlide.style.gradient
+                            ? previewSlide.style.gradient
+                            : previewSlide.style.background === 'dark' ? '#1a1a1a' : '#ffffff',
+                        }}
+                      >
+                        {previewSlide.hasBackgroundImage && previewSlide.backgroundImage?.url && (
+                          <div 
+                            className="absolute inset-0 bg-cover bg-center"
+                            style={{ backgroundImage: `url(${previewSlide.backgroundImage.url})`, opacity: 0.6 }}
+                          />
+                        )}
+                        {previewSlide.style.background === 'split' && previewSlide.backgroundImage?.url && (
+                           <div 
+                            className="absolute top-0 left-0 right-0 bg-cover bg-center"
+                            style={{ 
+                              height: `${previewSlide.style.splitRatio || 50}%`,
+                              backgroundImage: `url(${previewSlide.backgroundImage.url})` 
+                            }}
+                          />
+                        )}
+                        
+                        <div className="absolute inset-0 flex items-center justify-center p-4">
+                          <div className="text-[32px] font-bold text-center leading-tight truncate-3-lines" style={{ color: previewSlide.style.textColor === 'white' ? 'white' : 'black' }}>
+                            {previewSlide.fullScriptText.length > 50 ? previewSlide.fullScriptText.slice(0, 50) + '...' : previewSlide.fullScriptText}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="absolute top-0.5 left-0.5 bg-black/50 text-white text-[8px] px-1 rounded">
-                    {idx + 1}
-                  </div>
-                  {idx === currentIndex && (
-                    <div className="absolute inset-0 bg-black/10 flex items-center justify-center pointer-events-none">
-                      <span className="bg-white/90 text-black text-[8px] font-bold px-1 rounded shadow-sm">EDITING</span>
+                    <div className="absolute top-0.5 left-0.5 bg-black/50 text-white text-[8px] px-1 rounded">
+                      {originalIndex + 1}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {originalIndex === currentIndex && (
+                      <div className="absolute inset-0 bg-black/10 flex items-center justify-center pointer-events-none">
+                        <span className="bg-white/90 text-black text-[8px] font-bold px-1 rounded shadow-sm">EDITING</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
           </div>
           <p className="mt-2 text-[10px] text-gray-400 text-center">
             Virtual rendering enabled for performance. Only style and basic layout are previewed in this view.

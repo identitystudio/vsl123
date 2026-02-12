@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Zap } from 'lucide-react';
 import { useProject, useUpdateProject, useUpdateSlides } from '@/hooks/use-project';
 import { StepIndicator } from './step-indicator';
@@ -13,20 +13,38 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { EditorStep, Slide } from '@/types';
 import { toast } from 'sonner';
-
 interface EditorContentProps {
   projectId: string;
 }
 
 export function EditorContent({ projectId }: EditorContentProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: project, isLoading } = useProject(projectId);
   const updateProject = useUpdateProject();
   const updateSlides = useUpdateSlides();
 
   const [step, setStep] = useState<EditorStep>(1);
+  const [hasSetInitialStep, setHasSetInitialStep] = useState(false);
+  const [forceSlideView, setForceSlideView] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [initialSlideIndex, setInitialSlideIndex] = useState(0);
+  const [autoEdit, setAutoEdit] = useState(false);
+
+  // Auto-set the step based on project state or query param
+  useEffect(() => {
+    if (!project || hasSetInitialStep) return;
+
+    const queryStep = searchParams.get('step');
+    if (queryStep) {
+      setStep(parseInt(queryStep) as EditorStep);
+    } else if (project.slides && project.slides.length > 0) {
+      // If slides exist, resume at the review/design step
+      setStep(2);
+    }
+    setHasSetInitialStep(true);
+  }, [project, searchParams, hasSetInitialStep]);
 
   // Determine step based on project state
   const currentStep = (() => {
@@ -38,8 +56,13 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const handleBack = () => {
     if (currentStep === 1) {
       router.push('/dashboard');
+    } else if (currentStep === 2 && !forceSlideView && project?.slides.every(s => s.reviewed)) {
+      // If we're on the review step and everything is already reviewed,
+      // the first "Back" should just show the slides again.
+      setForceSlideView(true);
     } else {
       setStep((s) => Math.max(1, s - 1) as EditorStep);
+      setForceSlideView(false);
     }
   };
 
@@ -136,7 +159,13 @@ export function EditorContent({ projectId }: EditorContentProps) {
           <SlideReviewer
             projectId={projectId}
             slides={project.slides}
-            onComplete={() => setStep(3)}
+            onComplete={() => {
+              setStep(3);
+              setAutoEdit(false);
+            }}
+            forceShowSlides={forceSlideView}
+            initialIndex={initialSlideIndex}
+            autoEdit={autoEdit}
           />
         )}
         {currentStep === 3 && (
@@ -152,7 +181,17 @@ export function EditorContent({ projectId }: EditorContentProps) {
           <PreviewExport
             projectId={projectId}
             projectName={project.name}
-            slides={project.slides}
+            slides={project.slides.filter(s => s.audioGenerated)}
+            onSlideClick={(filteredIndex) => {
+              const audioSlides = project.slides.filter(s => s.audioGenerated);
+              const targetSlide = audioSlides[filteredIndex];
+              const originalIndex = project.slides.findIndex(s => s.id === targetSlide.id);
+              if (originalIndex !== -1) {
+                setInitialSlideIndex(originalIndex);
+                setAutoEdit(true);
+                setStep(2);
+              }
+            }}
           />
         )}
       </main>

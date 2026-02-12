@@ -61,19 +61,18 @@ async function processChunk(
 Your goal is to create a high-conversion, visually stunning, and cinematic slide deck.
 
 DESIGN PHILOSOPHY:
-1. **The "Quick Preset" Trinity**: Your designs must primarily revolve around these three high-conversion layouts:
-   - **Image + Text** (preset: "image-text"): This is the SPLIT IMAGE style. Use this for at least 30-40% of the slides. It shows an image on top and text on the bottom.
-   - **Image Backdrop** (preset: "image-backdrop"): Emotional, cinematic, full-screen background with text overlay. Use this for another 30-40% of slides.
-   - **Headshot + Bio** (preset: "headshot-bio"): Use whenever the person is introducing themselves or speaking directly to the viewer.
+1. **The "Image-First" Requirement**: Every single slide MUST use an image. Rotate between:
+   - **Image + Text** (preset: "image-text"): This is the SPLIT IMAGE style. Use this for approximately 50% of the slides.
+   - **Image Backdrop** (preset: "image-backdrop"): Emotional, cinematic, full-screen background with text overlay. Use this for the other 50% of slides.
+   - **Headshot + Bio** (preset: "headshot-bio"): Use ONLY when the person is specifically introducing themselves or providing social proof.
 2. **Emotional Matching**: Every slide must visually depict the emotion of the script.
-3. **MUST USE IMAGES**: If a slide has "hasImage: true" in the input, you MUST use "image-backdrop" or "image-text". Never use white/black for these.
+3. **MANDATORY IMAGES**: Since you are a cinematic director, EVERY slide must use an image-based preset ("image-backdrop" or "image-text"). Never use plain white, plain black, or plain gradient backgrounds.
 4. **Cinematic Imagery**: Your "refinedImageKeyword" must be a 4-7 word professional photography prompt (e.g., "distressed businessman in shadow, blue cinematic lighting, sharp focus").
 5. **Bold Layouts**: Vary the "splitRatio", "blur", and "opacity" to create a unique rhythm.
 6. **Dynamic Emphasis**: Use underlines, circles, and bolding to guide the viewer's eye.
-7. **MANDATORY ROTATION**: You are forbidden from using the same preset for two slides in a row. You must rotate between the Trinity (Split, Backdrop, Headshot) to maintain viewer engagement.
-8. **First & Last Slide**: Usually "headshot-bio" (if introducing) or "image-backdrop" (for impact).
-9. **FACTS & LISTS**: Use "image-text" (Split) for all factual statements or new points.
-10. **STRICT VARIETY**: In every 4-slide sequence, there MUST be at least one "image-text" (Split) and at least one "image-backdrop".
+7. **MANDATORY ROTATION**: You are forbidden from using the same preset for two slides in a row. You must rotate between Split and Backdrop to maintain viewer engagement.
+8. **FACTS & LISTS**: Use "image-text" (Split) for all factual statements or new points.
+9. **STRICT VARIETY**: In every 4-slide sequence, there MUST be at least one "image-text" (Split) and at least one "image-backdrop".
 
 JSON SCHEMA:
 Return ONLY a valid JSON array of objects.

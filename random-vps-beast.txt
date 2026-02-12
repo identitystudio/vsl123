@@ -25,7 +25,7 @@ const runCmd = (cmd) => new Promise((resolve, reject) => {
 
 async function renderSlides(slides, framesDir, audioDir, updateJob) {
     const AUDIO_CONCURRENCY = 40; 
-    const TAB_CONCURRENCY = 8; // Lowered for maximum stability
+    const TAB_CONCURRENCY = 8;
     
     updateJob({ status: 'downloading_audio', progress: 5 });
     for (let i = 0; i < slides.length; i += AUDIO_CONCURRENCY) {
@@ -47,7 +47,7 @@ async function renderSlides(slides, framesDir, audioDir, updateJob) {
     }
 
     updateJob({ status: 'rendering_slides', progress: 15 });
-    const BROWSER_BATCH = 30; // Smaller batches to prevent "Ghost" processes
+    const BROWSER_BATCH = 30;
     for (let i = 0; i < slides.length; i += BROWSER_BATCH) {
         const chunk = slides.slice(i, i + BROWSER_BATCH);
         const browser = await puppeteer.launch({ 
@@ -63,7 +63,6 @@ async function renderSlides(slides, framesDir, audioDir, updateJob) {
                     const id = String(globalIdx).padStart(3, '0');
                     const filePath = path.join(framesDir, `slide_${id}.png`);
                     
-                    // RETRY LOOP (3 Attempts)
                     for (let attempt = 1; attempt <= 3; attempt++) {
                         const page = await browser.newPage();
                         try {
@@ -72,11 +71,9 @@ async function renderSlides(slides, framesDir, audioDir, updateJob) {
                             await page.setContent(html, { waitUntil: 'networkidle0', timeout: 45000 });
                             await new Promise(r => setTimeout(r, 500)); 
                             await page.screenshot({ path: filePath, timeout: 30000 });
-                            
-                            if (await fs.pathExists(filePath)) break; // Success!
+                            if (await fs.pathExists(filePath)) break;
                         } catch (e) {
-                            console.warn(`Slide ${id} Attempt ${attempt} failed:`, e.message);
-                            if (attempt === 3) throw new Error(`Slide ${id} failed after 3 attempts`);
+                            if (attempt === 3) throw new Error(`Slide ${id} failed`);
                         } finally {
                             await page.close();
                         }
@@ -105,14 +102,6 @@ app.post(['/render', '/render-zip'], async (req, res) => {
 
         await renderSlides(slides, dirs[0], dirs[1], updateJob);
 
-        // FINAL VERIFICATION: Ensure all files exist before FFmpeg
-        for (let i = 0; i < slides.length; i++) {
-            const id = String(i).padStart(3, '0');
-            if (!await fs.pathExists(path.join(dirs[0], `slide_${id}.png`))) {
-                throw new Error(`Critical Error: Frame slide_${id}.png is missing.`);
-            }
-        }
-
         const safeProjectName = (projectName || 'export').replace(/[^\w\s]/gi, '').replace(/\s+/g, '_');
         const finalFilename = `${safeProjectName}_${jobId}.${isZip ? 'zip' : 'mp4'}`;
         const finalPath = path.join(__dirname, 'outputs', finalFilename);
@@ -122,7 +111,7 @@ app.post(['/render', '/render-zip'], async (req, res) => {
             await runCmd(`cd "${workDir}" && zip -r -j -q "${finalPath}" frames audio`);
         } else {
             updateJob({ status: 'creating_video', progress: 85 });
-            const FFMPEG_CONC = 12; // Lowered to keep VPS snappy
+            const FFMPEG_CONC = 12;
             for (let i = 0; i < slides.length; i += FFMPEG_CONC) {
                 const batch = slides.slice(i, i + FFMPEG_CONC);
                 await Promise.all(batch.map(async (_, idx) => {
@@ -131,10 +120,14 @@ app.post(['/render', '/render-zip'], async (req, res) => {
                     const img = path.join(dirs[0], `slide_${id}.png`), aud = path.join(dirs[1], `audio_${id}.mp3`), out = path.join(dirs[2], `seg_${id}.mp4`);
                     
                     if (await fs.pathExists(aud)) {
-                        const duration = await runCmd(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${aud}"`).then(d => d.trim());
-                        await runCmd(`ffmpeg -y -loop 1 -i "${img}" -i "${aud}" -c:v libx264 -preset superfast -t ${duration} -pix_fmt yuv420p -shortest "${out}"`);
+                        // PERFECT SYNC COMMAND:
+                        // -loop 1: Loop the image
+                        // -r 30: Force 30fps
+                        // -shortest: Stop exactly when the audio finishes
+                        // -c:a aac: Standardize audio for perfect concatenating
+                        await runCmd(`ffmpeg -y -loop 1 -r 30 -i "${img}" -i "${aud}" -c:v libx264 -preset ultrafast -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest "${out}"`);
                     } else {
-                        await runCmd(`ffmpeg -y -loop 1 -i "${img}" -c:v libx264 -preset superfast -t 3 -pix_fmt yuv420p "${out}"`);
+                        await runCmd(`ffmpeg -y -loop 1 -r 30 -i "${img}" -c:v libx264 -preset ultrafast -t 3 -pix_fmt yuv420p "${out}"`);
                     }
                 }));
                 updateJob({ progress: 85 + Math.floor((i / slides.length) * 10) });
@@ -145,9 +138,8 @@ app.post(['/render', '/render-zip'], async (req, res) => {
         }
 
         updateJob({ status: 'completed', progress: 100, downloadUrl: `/outputs/${finalFilename}` });
-        setTimeout(() => fs.remove(workDir).catch(() => {}), 600000); // Keep temp for 10m
+        setTimeout(() => fs.remove(workDir).catch(() => {}), 600000);
     } catch (err) {
-        console.error(`Job ${jobId} Failed:`, err.message);
         updateJob({ status: 'failed', error: err.message });
         fs.remove(workDir).catch(() => {});
     }
@@ -159,4 +151,4 @@ app.get('/status/:jobId', (req, res) => {
     res.json(job);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Tank-Stable Beast Mode on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Perfect Sync Beast Mode on ${PORT}`));
