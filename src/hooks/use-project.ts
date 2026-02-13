@@ -15,9 +15,13 @@ export function useProject(projectId: string) {
         .from('vsl_projects')
         .select('*')
         .eq('id', projectId)
-        .single();
+        .maybeSingle();
 
       if (projectError) throw projectError;
+
+      if (!project) {
+        return null;
+      }
 
       // 2. Fetch slides from the separate table
       const { data: slides, error: slidesError } = await supabase

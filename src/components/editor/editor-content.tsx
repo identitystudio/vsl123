@@ -20,7 +20,7 @@ interface EditorContentProps {
 export function EditorContent({ projectId }: EditorContentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: project, isLoading } = useProject(projectId);
+  const { data: project, isLoading, refetch } = useProject(projectId);
   const updateProject = useUpdateProject();
   const updateSlides = useUpdateSlides();
 
@@ -31,6 +31,13 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const [projectName, setProjectName] = useState('');
   const [initialSlideIndex, setInitialSlideIndex] = useState(0);
   const [autoEdit, setAutoEdit] = useState(false);
+
+  // Prefetch dashboard to speed up "Back" navigation
+  useEffect(() => {
+    router.prefetch('/dashboard');
+  }, [router]);
+
+  const isNewProject = searchParams.get('new') === '1';
 
   // Auto-set the step based on project state or query param
   useEffect(() => {
@@ -46,6 +53,20 @@ export function EditorContent({ projectId }: EditorContentProps) {
     setHasSetInitialStep(true);
   }, [project, searchParams, hasSetInitialStep]);
 
+  useEffect(() => {
+    if (!isNewProject || project) return;
+    const interval = setInterval(() => {
+      refetch();
+    }, 750);
+    return () => clearInterval(interval);
+  }, [isNewProject, project, refetch]);
+
+  useEffect(() => {
+    if (isNewProject && project) {
+      router.replace(`/editor/${projectId}`);
+    }
+  }, [isNewProject, project, projectId, router]);
+
   // Determine step based on project state
   const currentStep = (() => {
     if (!project) return step;
@@ -55,7 +76,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
 
   const handleBack = () => {
     if (currentStep === 1) {
-      router.push('/dashboard');
+      router.back();
     } else if (currentStep === 2 && !forceSlideView && project?.slides.every(s => s.reviewed)) {
       // If we're on the review step and everything is already reviewed,
       // the first "Back" should just show the slides again.
@@ -93,10 +114,12 @@ export function EditorContent({ projectId }: EditorContentProps) {
     setEditingName(false);
   };
 
-  if (isLoading) {
+  if (isLoading || (isNewProject && !project)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-pulse text-gray-400">Loading project...</div>
+        <div className="animate-pulse text-gray-400">
+          {isNewProject ? 'Creating project...' : 'Loading project...'}
+        </div>
       </div>
     );
   }
@@ -118,7 +141,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between shrink-0">
         <button
           onClick={handleBack}
-          className="flex items-center gap-1 text-sm text-gray-600 hover:text-black transition-colors"
+          className="flex items-center gap-1 text-sm text-gray-600 hover:text-black transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           {currentStep === 1 ? 'Exit' : 'Back'}
@@ -145,7 +168,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                 setProjectName(project.name);
                 setEditingName(true);
               }}
-              className="text-sm font-medium hover:underline"
+              className="text-sm font-medium hover:underline cursor-pointer"
             >
               {project.name}
               <span className="ml-1 text-gray-400">&#9998;</span>

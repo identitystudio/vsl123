@@ -26,13 +26,12 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  const handleNewProject = async () => {
-    try {
-      const project = await createProject.mutateAsync(undefined);
-      router.push(`/editor/${project.id}`);
-    } catch (err) {
+  const handleNewProject = () => {
+    const newId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    router.push(`/editor/${newId}?new=1`);
+    createProject.mutateAsync({ id: newId }).catch(() => {
       toast.error('Failed to create project');
-    }
+    });
   };
 
   const handleOpenProject = (projectId: string) => {
@@ -130,7 +129,7 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
                     <h3 className="font-bold text-xl truncate pr-2">{project.name}</h3>
                     <button
                       onClick={(e) => startEditing(e, project)}
-                      className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-black"
+                      className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-black cursor-pointer"
                       title="Rename project"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -177,7 +176,7 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
                 {/* Delete button (hidden by default, shown on hover) */}
                 <button
                   onClick={(e) => handleDeleteProject(e, project.id)}
-                  className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20"
+                  className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 cursor-pointer"
                   title="Delete Project"
                 >
                   <Trash2 className="w-4 h-4" />

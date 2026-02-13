@@ -627,7 +627,7 @@ export function AudioSetup({
 
         <button
           onClick={onSkip}
-          className="text-sm text-gray-400 hover:text-gray-600"
+          className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer"
         >
           Skip audio for now &rarr;
         </button>

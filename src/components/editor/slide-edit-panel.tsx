@@ -1257,7 +1257,7 @@ export function SlideEditPanel({
       <div className="flex items-center gap-2">
         <button
           onClick={() => setApplyToAll(!applyToAll)}
-          className="flex items-center gap-3 group px-1"
+          className="flex items-center gap-3 group px-1 cursor-pointer"
           type="button"
         >
           <div 

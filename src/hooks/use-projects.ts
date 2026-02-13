@@ -84,7 +84,9 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (name?: string) => {
+    mutationFn: async (payload?: { id?: string; name?: string }) => {
+      const name = payload?.name;
+      const id = payload?.id;
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -94,6 +96,7 @@ export function useCreateProject() {
       const { data, error } = await supabase
         .from('vsl_projects')
         .insert({
+          ...(id ? { id } : {}),
           user_id: user.id,
           name: name || 'Untitled Project',
           slides: [],
