@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { generateText } from '@/lib/ai-provider';
 
 interface SlideInput {
   id: string;
@@ -42,7 +38,7 @@ async function processChunk(
   slides: SlideInput[],
   chunkIndex: number,
   totalSlides: number,
-  previousStyles: string
+  userPrompt?: string
 ): Promise<SlideStyleDecision[]> {
   const slidesText = slides
     .map((s, i) => {
@@ -54,7 +50,7 @@ async function processChunk(
   console.log(`[AI] Designing styles for chunk ${chunkIndex + 1} (${slides.length} slides)...`);
 
   try {
-    const message = await anthropic.messages.create({
+    const text = await generateText({
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 4096,
       system: `You are a World-Class VSL (Video Sales Letter) Creative Director and Slide Designer. 
@@ -103,6 +99,7 @@ Return ONLY a valid JSON array of objects.
         {
           role: 'user',
           content: `Style these slides for a high-impact VSL.
+${userPrompt ? `USER REQUIREMENTS (IMPORTANT): ${userPrompt}` : ''}
 TOTAL SLIDES: ${totalSlides}
 SLIDES:
 ${slidesText}`,
@@ -110,12 +107,7 @@ ${slidesText}`,
       ],
     });
 
-    const textContent = message.content.find((b) => b.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text content in AI response');
-    }
-
-    let json = textContent.text.trim();
+    let json = text.trim();
     if (json.startsWith('```json')) json = json.slice(7);
     else if (json.startsWith('```')) json = json.slice(3);
     if (json.endsWith('```')) json = json.slice(0, -3);
@@ -124,7 +116,7 @@ ${slidesText}`,
     return JSON.parse(json);
   } catch (err: any) {
     if (err?.status === 402 || err?.message?.toLowerCase().includes('billing') || err?.message?.toLowerCase().includes('credit')) {
-      console.error('❌ AI FAILED: Out of Anthropic credits or billing issue.');
+      console.error('❌ AI FAILED: Out of credits or billing issue.');
     } else {
       console.error(`Chunk ${chunkIndex} styling error:`, err);
     }
@@ -146,7 +138,7 @@ ${slidesText}`,
 
 export async function POST(request: NextRequest) {
   try {
-    const { slides } = await request.json();
+    const { slides, userPrompt } = await request.json();
 
     if (!slides || !Array.isArray(slides) || slides.length === 0) {
       return NextResponse.json(
@@ -175,7 +167,7 @@ export async function POST(request: NextRequest) {
             chunk,
             chunkIndex,
             slides.length,
-            '' // Context is harder in parallel, skipping for performance on huge decks
+            userPrompt
           );
         })
       );

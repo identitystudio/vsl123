@@ -13,6 +13,7 @@ import {
   Minus,
   BarChart3,
   Check,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -218,12 +219,12 @@ async function fetchPexelsImage(keyword: string): Promise<string | null> {
 }
 
 // Generate a smart image search keyword from slide text using AI
-async function getSmartKeyword(slideText: string, emotion?: string, sceneTitle?: string): Promise<string> {
+async function getSmartKeyword(slideText: string, emotion?: string, sceneTitle?: string, userPrompt?: string): Promise<string> {
   try {
     const response = await fetch('/api/image-keyword', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slideText, emotion, sceneTitle }),
+      body: JSON.stringify({ slideText, emotion, sceneTitle, userPrompt }),
     });
     const data = await response.json();
     return data.keyword || 'abstract background';
@@ -252,6 +253,8 @@ export function SlideEditPanel({
   const [fetchingImage, setFetchingImage] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState('');
   const [showImageSearch, setShowImageSearch] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [loadingInfographic, setLoadingInfographic] = useState(false);
   const localHeadshotRef = useRef<HTMLInputElement>(null);
   const headshotRef = headshotInputRef || localHeadshotRef;
@@ -403,12 +406,14 @@ export function SlideEditPanel({
     setFetchingImage(true);
 
     // Use existing imageKeyword, or generate a smart one from slide text
+    // If aiPrompt is set, ALWAYS regenerate keyword to respect the prompt
     let keyword = slideForKeyword.imageKeyword;
-    if (!keyword) {
+    if (!keyword || aiPrompt) {
       keyword = await getSmartKeyword(
         slideForKeyword.fullScriptText,
         slideForKeyword.emotion,
         slideForKeyword.sceneTitle,
+        aiPrompt
       );
     }
 
@@ -425,6 +430,7 @@ export function SlideEditPanel({
           url,
         },
       });
+      if (aiPrompt) toast.success('Image updated based on your prompt!');
     } else {
       onUpdate({
         ...newSlide,
@@ -433,7 +439,7 @@ export function SlideEditPanel({
       });
       toast.error('No image found. Use "Generate AI Image" or search manually.');
     }
-  }, [onUpdate]);
+  }, [onUpdate, aiPrompt]);
 
   const handlePresetChange = (preset: PresetType) => {
     let newStyle: Partial<SlideStyle> = {};
@@ -969,34 +975,86 @@ export function SlideEditPanel({
           ) : null}
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setShowImageSearch(true)}
-            >
-              <Search className="w-3.5 h-3.5" />
-              Search Image
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setAiImageOpen(true)}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Generate AI Image
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={() => bgImageUploadRef.current?.click()}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Upload
-            </Button>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShowImageSearch(true)}
+              >
+                <Search className="w-3.5 h-3.5" />
+                Search Image
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setAiImageOpen(true)}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Generate AI Image
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() => bgImageUploadRef.current?.click()}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Upload
+              </Button>
+              <Button
+                variant={showAiPrompt ? "secondary" : "ghost"}
+                size="sm"
+                className="gap-1.5 ml-auto"
+                onClick={() => setShowAiPrompt(!showAiPrompt)}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                AI Prompt
+              </Button>
+            </div>
+
+            {/* AI Search Prompt */}
+            {showAiPrompt && (
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">
+                    Smart Pexels Search
+                  </span>
+                  {aiPrompt && (
+                    <button
+                      onClick={() => setAiPrompt('')}
+                      className="text-[10px] text-red-500 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <Textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Describe what you want (e.g. 'young people, no suits, bright colors')..."
+                  className="min-h-[60px] text-sm bg-white"
+                />
+                <Button
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => autoFetchImage(slide, slide, {})}
+                  disabled={fetchingImage || !aiPrompt.trim()}
+                >
+                  {fetchingImage ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  Update Image with Prompt
+                </Button>
+                <p className="text-[10px] text-gray-400">
+                  Refines the search term using AI to find better Pexels matches.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

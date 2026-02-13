@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { generateText } from '@/lib/ai-provider';
 
 // Split script into sentences
 function splitIntoSentences(script: string): string[] {
@@ -35,7 +31,7 @@ interface SceneData {
   slides: SlideData[];
 }
 
-// Process a chunk of sentences with Claude
+// Process a chunk of sentences with Claude (or OpenAI fallback)
 async function processChunk(
   sentences: string[],
   chunkIndex: number,
@@ -47,7 +43,7 @@ async function processChunk(
 
   console.log(`[AI] Splitting script chunk ${chunkIndex + 1} of ${totalChunks}...`);
   try {
-    const message = await anthropic.messages.create({
+    const text = await generateText({
       model: 'claude-3-5-haiku-20241022',
       max_tokens: 4096,
       messages: [
@@ -71,10 +67,7 @@ ${numberedSentences}`,
       ],
     });
 
-    const textContent = message.content.find((b) => b.type === 'text');
-    if (!textContent || textContent.type !== 'text') return [];
-
-    let json = textContent.text.trim();
+    let json = text.trim();
     if (json.startsWith('```json')) json = json.slice(7);
     else if (json.startsWith('```')) json = json.slice(3);
     if (json.endsWith('```')) json = json.slice(0, -3);
@@ -83,7 +76,7 @@ ${numberedSentences}`,
     return JSON.parse(json);
   } catch (err: any) {
     if (err?.status === 402 || err?.message?.toLowerCase().includes('billing') || err?.message?.toLowerCase().includes('credit')) {
-      console.error('❌ AI FAILED: Out of Anthropic credits or billing issue.');
+      console.error('❌ AI FAILED: Out of credits or billing issue.');
     } else {
       console.error(`Chunk ${chunkIndex} AI error, using fallback:`, err);
     }

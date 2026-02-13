@@ -79,7 +79,7 @@ function MagicProgress({ progress }: { progress: number }) {
   }, []);
 
   const spawnConfetti = useCallback((atProgress: number, count: number) => {
-    const colors = ['#6366f1', '#818cf8', '#4f46e5', '#4338ca', '#3730a3', '#F5D300', '#C0C0C0'];
+    const colors = ['#000000', '#1a1a1a', '#333333', '#404040', '#525252', '#F5D300', '#C0C0C0'];
     const pieces: ConfettiPiece[] = [];
     for (let i = 0; i < count; i++) {
       pieces.push({
@@ -135,10 +135,10 @@ function MagicProgress({ progress }: { progress: number }) {
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${displayProgress}%`,
-              background: 'linear-gradient(90deg, #4f46e5 0%, #818cf8 30%, #4f46e5 50%, #6366f1 70%, #4f46e5 100%)',
+              background: 'linear-gradient(90deg, #000000 0%, #333333 30%, #000000 50%, #1a1a1a 70%, #000000 100%)',
               backgroundSize: '200% 100%',
               animation: 'export-shimmer 2s linear infinite',
-              boxShadow: '0 0 10px rgba(79, 70, 229, 0.4)',
+              boxShadow: '0 0 10px rgba(0, 0, 0, 0.4)',
               transition: 'width 0.1s linear',
             }}
           />
@@ -179,7 +179,7 @@ function MagicProgress({ progress }: { progress: number }) {
             "{msg.text}"
           </p>
         </div>
-        <p className="text-sm font-bold text-indigo-600 animate-pulse">
+        <p className="text-sm font-bold text-black animate-pulse">
           {Math.floor(displayProgress)}% COMPLETE
         </p>
       </div>
@@ -1242,7 +1242,7 @@ export function PreviewExport({
                   }
                 }}
                 size="lg"
-                className="bg-indigo-600 text-white hover:bg-indigo-700 gap-2 text-lg px-8 py-6 w-full"
+                className="bg-black text-white hover:bg-gray-800 gap-2 text-lg px-8 py-6 w-full shadow-lg shadow-black/5"
               >
                 <Download className="w-5 h-5" />
                 Export Video (VPS / Fast)
@@ -1321,7 +1321,7 @@ export function PreviewExport({
                   }
                 }}
                 size="lg"
-                className="bg-gray-800 text-white hover:bg-gray-900 gap-2 text-lg px-8 py-6 w-full"
+                className="bg-gray-100 text-black border border-gray-200 hover:bg-gray-200 gap-2 text-lg px-8 py-6 w-full"
               >
                 <Download className="w-5 h-5" />
                 Export ZIP (VPS / Fast)

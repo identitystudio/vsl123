@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { generateText } from '@/lib/ai-provider';
 
 // Common icon library for quick fallback
 const ICON_LIBRARY: Record<string, string> = {
@@ -61,7 +57,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const message = await anthropic.messages.create({
+    const textResponse = await generateText({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 2048,
       messages: [
@@ -99,17 +95,7 @@ If type is "svg", the value should be complete SVG markup like:
       ],
     });
 
-    const textContent = message.content.find((b) => b.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      // Fallback to emoji
-      return NextResponse.json({
-        type: 'emoji',
-        value: '💡',
-        reasoning: 'Fallback due to AI response format',
-      });
-    }
-
-    let json = textContent.text.trim();
+    let json = textResponse.trim();
     // Clean markdown if present
     if (json.startsWith('```json')) json = json.slice(7);
     else if (json.startsWith('```')) json = json.slice(3);

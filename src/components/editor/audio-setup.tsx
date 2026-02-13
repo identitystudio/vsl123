@@ -45,6 +45,7 @@ export function AudioSetup({
   const [rangeStart, setRangeStart] = useState('1');
   const [rangeEnd, setRangeEnd] = useState('10');
   const [subInfo, setSubInfo] = useState<{ remaining_characters: number; character_limit: number } | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const updateSlides = useUpdateSlides();
   const updateSettings = useUpdateSettings();
@@ -371,61 +372,73 @@ export function AudioSetup({
                 <div className="w-full space-y-3 pt-4 border-t border-gray-100">
                   <Progress value={generatingProgress} className="h-2" />
                   <p className="text-sm text-center text-gray-500">
-                    Generating remaining... {generatingProgress}%
+                    Generating... {generatingProgress}%
                   </p>
                 </div>
               ) : (
-                <div className="w-full space-y-3 pt-4 border-t border-gray-100">
-                  <div className="space-y-2 mb-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">
-                      Generate specific range
-                    </p>
-                    <div className="flex gap-2 items-center">
-                      <Input 
-                        type="number" 
-                        value={rangeStart} 
-                        onChange={(e) => setRangeStart(e.target.value)}
-                        className="h-9 text-center text-sm"
-                        placeholder="Start"
-                        min={1}
-                        max={slides.length}
-                      />
-                      <span className="text-gray-300">to</span>
-                      <Input 
-                        type="number" 
-                        value={rangeEnd} 
-                        onChange={(e) => setRangeEnd(e.target.value)}
-                        className="h-9 text-center text-sm"
-                        placeholder="End"
-                        min={1}
-                        max={slides.length}
-                      />
+                <div className="w-full space-y-4 pt-4 border-t border-gray-100">
+                  {showAdvanced && (
+                    <div className="bg-gray-50 p-4 rounded-xl space-y-3 border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">
+                        Generate specific range
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <Input 
+                          type="number" 
+                          value={rangeStart} 
+                          onChange={(e) => setRangeStart(e.target.value)}
+                          className="h-9 text-center text-sm bg-white"
+                          placeholder="Start"
+                          min={1}
+                          max={slides.length}
+                        />
+                        <span className="text-gray-300 font-medium">to</span>
+                        <Input 
+                          type="number" 
+                          value={rangeEnd} 
+                          onChange={(e) => setRangeEnd(e.target.value)}
+                          className="h-9 text-center text-sm bg-white"
+                          placeholder="End"
+                          min={1}
+                          max={slides.length}
+                        />
+                      </div>
+                      <Button
+                        onClick={handleGenerateRange}
+                        className="w-full h-10 text-[11px] font-black uppercase tracking-widest bg-black text-white hover:bg-gray-800 transition-colors shadow-lg shadow-black/5"
+                        disabled={!selectedVoice}
+                      >
+                        Generate Range
+                      </Button>
                     </div>
-                    <Button
-                      onClick={handleGenerateRange}
-                      className="w-full h-9 text-xs font-bold uppercase tracking-tight bg-black text-white hover:bg-gray-800"
-                      disabled={!selectedVoice}
-                    >
-                      Generate Range
-                    </Button>
-                  </div>
+                  )}
 
-                  <div className="border-t border-gray-100 pt-4 space-y-2">
+                  <div className="space-y-3">
                     <Button
                       onClick={handleGenerateRemaining}
                       size="lg"
-                      className="w-full bg-black text-white hover:bg-gray-800"
+                      className="w-full bg-black text-white hover:bg-gray-800 h-12 text-base font-bold shadow-lg shadow-black/5"
                       disabled={!selectedVoice}
                     >
-                      Generate Remaining Audio
+                      Generate Audio
                     </Button>
-                    <Button
-                      variant="outline"
-                      onClick={onComplete}
-                      className="w-full border-gray-200"
-                    >
-                      Done & View Export &rarr;
-                    </Button>
+                    
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex-1 border-gray-200 h-10 text-xs uppercase font-black tracking-widest text-gray-500"
+                      >
+                        {showAdvanced ? 'Hide Advanced' : 'Advanced Settings'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={onComplete}
+                        className="flex-1 border-gray-200 h-10 text-xs uppercase font-black tracking-widest bg-gray-50/50"
+                      >
+                        Done &rarr;
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

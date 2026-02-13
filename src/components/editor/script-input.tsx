@@ -374,6 +374,7 @@ export function ScriptInput({
   onSlidesGenerated,
 }: ScriptInputProps) {
   const [script, setScript] = useState(initialScript);
+  const [aiPrompt, setAiPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -509,6 +510,7 @@ export function ScriptInput({
             hasImage: s.hasBackgroundImage,
             imageKeyword: s.imageKeyword,
           })),
+          userPrompt: aiPrompt,
         }),
         signal,
       });
@@ -801,9 +803,13 @@ export function ScriptInput({
       const imageCount = styledSlides.filter((s) => s.backgroundImage?.url).length;
       const infographicCount = styledSlides.filter((s) => s.isInfographic).length;
 
-      toast.success(
-        `${styledSlides.length} slides styled with ${imageCount} images${infographicCount > 0 ? ` and ${infographicCount} infographics` : ''}. Magic complete!`
-      );
+      if (imageCount === 0) {
+        toast.error('AI credits balance is not sufficient. (0 images generated)');
+      } else {
+        toast.success(
+          `${styledSlides.length} slides styled with ${imageCount} images${infographicCount > 0 ? ` and ${infographicCount} infographics` : ''}. Magic complete!`
+        );
+      }
       console.log('✅ AI Designing complete! All slides have been styled and images fetched.');
       onSlidesGenerated(styledSlides);
     } catch (err: any) {
@@ -945,21 +951,43 @@ export function ScriptInput({
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <button
-                onClick={handleAIGenerate}
-                className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-black hover:bg-gray-50 transition-all text-left group"
-              >
-                <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors">
-                  <Sparkles className="w-6 h-6 text-purple-600" />
+              {/* Option 1: Generate with AI */}
+              <div className="rounded-xl border-2 border-gray-100 p-4 hover:border-black hover:bg-gray-50 transition-all group">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors">
+                    <Sparkles className="w-6 h-6 text-purple-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-gray-900">Generate slides with AI</h3>
+                    <p className="text-sm text-gray-500 italic">
+                      Claude 3.5 Sonnet handles the layout, emphasis, and image selection for you.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900">Generate slides with AI</h3>
-                  <p className="text-sm text-gray-500 italic">
-                    Claude 3.5 Sonnet handles the layout, emphasis, and image selection for you.
-                  </p>
+                
+                <div className="pl-16 space-y-3">
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            AI Art Direction (Optional)
+                        </label>
+                        <Textarea 
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                            placeholder="Describe your visual style (e.g. 'Dark moody cinematic', 'Bright professional office', 'No people, only objects')..."
+                            className="min-h-[80px] bg-white text-sm resize-none focus-visible:ring-purple-500"
+                        />
+                    </div>
+                    <Button 
+                        onClick={handleAIGenerate}
+                        className="w-full bg-black hover:bg-gray-800 text-white gap-2"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        Generate with AI
+                    </Button>
                 </div>
-              </button>
+              </div>
 
+              {/* Option 2: Manual Edit */}
               <button
                 onClick={handleManualGenerate}
                 className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-black hover:bg-gray-50 transition-all text-left group"

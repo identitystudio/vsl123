@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { generateText } from '@/lib/ai-provider';
 
 interface SlideInput {
   id: string;
@@ -33,7 +29,7 @@ export async function POST(request: NextRequest) {
       .map((s, i) => `${i + 1}. [${s.id}] "${s.fullScriptText}"${s.emotion ? ` (${s.emotion})` : ''}`)
       .join('\n');
 
-    const message = await anthropic.messages.create({
+    const textResponse = await generateText({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       messages: [
@@ -69,17 +65,7 @@ Return ONLY valid JSON (no markdown):
       ],
     });
 
-    const textContent = message.content.find((b) => b.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      // Fallback: just use current slide
-      return NextResponse.json({
-        bundledSlideIds: [currentSlide.id],
-        captions: [currentSlide.fullScriptText],
-        reasoning: 'Fallback: single slide',
-      });
-    }
-
-    let json = textContent.text.trim();
+    let json = textResponse.trim();
     // Clean markdown if present
     if (json.startsWith('```json')) json = json.slice(7);
     else if (json.startsWith('```')) json = json.slice(3);

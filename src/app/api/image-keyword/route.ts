@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { generateText } from '@/lib/ai-provider';
 
 export async function POST(request: NextRequest) {
   try {
-    const { slideText, emotion, sceneTitle } = await request.json();
+    const { slideText, emotion, sceneTitle, userPrompt } = await request.json();
 
     if (!slideText) {
       return NextResponse.json(
@@ -16,7 +12,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const message = await anthropic.messages.create({
+    const textResponse = await generateText({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 100,
       messages: [
@@ -27,21 +23,19 @@ export async function POST(request: NextRequest) {
 Text: "${slideText}"
 ${emotion ? `Emotion: ${emotion}` : ''}
 ${sceneTitle ? `Scene: ${sceneTitle}` : ''}
+${userPrompt ? `User Requirements (IMPORTANT): ${userPrompt}` : ''}
 
-Reply with ONLY the search term, nothing else. Examples:
+Reply with ONLY the search term, nothing else. The search term MUST respect the User Requirements if provided (e.g., age, ethnicity, setting). Examples:
 - "You watched your mom struggle to read" → "mother reading difficulty"
 - "We made $2 million" → "business success celebration"
-- "I was broke and desperate" → "stressed person finances"`,
+- "I was broke and desperate" → "stressed person finances"
+- User: "No people", Text: "The city was quiet" → "empty city street"
+- User: "Young asian woman", Text: "She felt happy" → "happy asian woman"`,
         },
       ],
     });
 
-    const textContent = message.content.find((b) => b.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      return NextResponse.json({ keyword: slideText.split(/\s+/).slice(0, 3).join(' ') });
-    }
-
-    const keyword = textContent.text.trim().replace(/['"]/g, '');
+    const keyword = textResponse.trim().replace(/['"]/g, '');
     return NextResponse.json({ keyword });
   } catch (error) {
     console.error('Image keyword error:', error);

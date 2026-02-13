@@ -153,7 +153,18 @@ export function SlideReviewer({
   const bgImageInputRef = useRef<HTMLInputElement>(null);
   const updateSingleSlide = useUpdateSingleSlide();
   const updateSlides = useUpdateSlides();
-  const HOLD_DURATION = 5000;
+  const HOLD_DURATION = 1000;
+
+  // Use a ref for slides to avoid stale closures in hold animation
+  const slidesRef = useRef(slides);
+  useEffect(() => {
+    slidesRef.current = slides;
+  }, [slides]);
+
+  // Sync local state with props to ensure we have the latest IDs (especially after regeneration)
+  useEffect(() => {
+    setSlides(initialSlides);
+  }, [initialSlides]);
 
   // Auto-open editing if jumped to a slide
   useEffect(() => {
@@ -229,6 +240,8 @@ export function SlideReviewer({
 
     if (currentIndex < slides.length - 1) {
       setCurrentIndex(currentIndex + 1);
+    } else {
+      setViewingSlidesAnyway(false);
     }
 
     // Save this specific slide immediately
@@ -408,15 +421,19 @@ export function SlideReviewer({
   };
 
   const handleApproveAllRemaining = async () => {
-    // Mark everything as reviewed
-    const finalSlides = slides.map((s) => ({
+    // 1. Prepare updated slides from the Ref to avoid stale closure
+    const finalSlides = slidesRef.current.map((s) => ({
       ...s,
       reviewed: true,
     }));
+
+    // 2. Update UI IMMEDIATELY to trigger the completion screen
     setSlides(finalSlides);
-    await saveBulkSlides(finalSlides);
     setHoldProgress(0);
-    // This will trigger the "All slides reviewed" screen because allReviewed becomes true
+    setViewingSlidesAnyway(false); 
+
+    // 3. Sync with DB in the background
+    saveBulkSlides(finalSlides);
   };
 
   const handleComplete = async () => {

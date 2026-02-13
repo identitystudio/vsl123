@@ -10,11 +10,12 @@ import { toast } from 'sonner';
 
 interface DashboardContentProps {
   email: string;
+  userId: string;
 }
 
-export function DashboardContent({ email }: DashboardContentProps) {
+export function DashboardContent({ email, userId }: DashboardContentProps) {
   const router = useRouter();
-  const { data: projects, isLoading } = useProjects();
+  const { data: projects, isInitialLoading } = useProjects(userId);
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
 
@@ -59,7 +60,7 @@ export function DashboardContent({ email }: DashboardContentProps) {
           </Button>
         </div>
 
-        {isLoading ? (
+        {isInitialLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
               <div
@@ -126,7 +127,7 @@ export function DashboardContent({ email }: DashboardContentProps) {
               </div>
             ))}
           </div>
-        ) : (
+        ) : projects && projects.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-gray-500 mb-4">No projects yet</p>
             <Button
@@ -136,7 +137,7 @@ export function DashboardContent({ email }: DashboardContentProps) {
               Create your first VSL
             </Button>
           </div>
-        )}
+        ) : null}
       </main>
     </div>
   );

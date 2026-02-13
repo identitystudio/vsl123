@@ -8,42 +8,52 @@ import type { User } from '@supabase/supabase-js';
 
 const supabase = createClient();
 
-export function useProjects() {
+export function useProjects(initialUserId?: string) {
   const queryClient = useQueryClient();
-  const [userId, setUserId] = useState<string | null>(null);
-  const prevUserIdRef = useRef<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(initialUserId || null);
+  const [isAuthLoading, setIsAuthLoading] = useState(!initialUserId);
 
   useEffect(() => {
-    // Get initial user session
-    supabase.auth.getUser().then(({ data }) => {
-      const newUserId = data.user?.id ?? null;
-      setUserId(newUserId);
-      prevUserIdRef.current = newUserId;
+    // 1. Get current session immediately
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const currentId = session?.user?.id ?? null;
+      // Only update if different or initial was missing
+      if (currentId !== userId) {
+        setUserId(currentId);
+      }
+      setIsAuthLoading(false);
     });
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // 2. Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const newUserId = session?.user?.id ?? null;
-      
-      // If user changed, invalidate and refetch
-      if (prevUserIdRef.current !== newUserId) {
-        queryClient.resetQueries({ queryKey: ['projects'] });
-        prevUserIdRef.current = newUserId;
-      }
-      
       setUserId(newUserId);
+      setIsAuthLoading(false);
+
+      // Invalidate projects on any auth change to be safe
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+      }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [queryClient]);
+  }, [queryClient, userId]); // Include userId in dep array to check against updates
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ['projects', userId],
+    enabled: !!userId,
     queryFn: async () => {
-      if (!userId) return [];
+      // Security Check: ensure client SDK has the session ready
+      const { data: { session } } = await supabase.auth.getSession();
       
+      // If session isn't ready or doesn't match the requested user, 
+      // throw to trigger retry instead of returning empty list (RLS failure)
+      if (!session || (userId && session.user.id !== userId)) {
+        throw new Error('Session not synchronized yet');
+      }
+
       const { data, error } = await supabase
         .from('vsl_projects')
         .select(`
@@ -62,6 +72,12 @@ export function useProjects() {
       return projects as unknown as VslProject[];
     },
   });
+
+  return {
+    ...query,
+    // Loading if auth is still resolving OR query is pending
+    isInitialLoading: isAuthLoading || (!!userId && query.isPending && !query.data),
+  };
 }
 
 export function useCreateProject() {

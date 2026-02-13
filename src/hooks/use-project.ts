@@ -24,7 +24,7 @@ export function useProject(projectId: string) {
         .from('slides')
         .select('*')
         .eq('project_id', projectId)
-        .order('order_index', { ascending: true });
+        .order('order_index', { ascending: true }); 
 
       if (slidesError) throw slidesError;
 
@@ -64,8 +64,38 @@ export function useUpdateProject() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project', data.id] });
+    // Optimistic Update
+    onMutate: async ({ projectId, updates }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['project', projectId] });
+      await queryClient.cancelQueries({ queryKey: ['projects'] });
+
+      // Snapshot previous value
+      const previousProject = queryClient.getQueryData(['project', projectId]);
+
+      // Optimistically update to new value
+      queryClient.setQueryData(['project', projectId], (old: VslProject | undefined) => {
+        if (!old) return old;
+        return { ...old, ...updates };
+      });
+      
+      // Also update the list if possible
+      queryClient.setQueryData(['projects'], (old: VslProject[] | undefined) => {
+        if (!old) return old;
+        return old.map(p => p.id === projectId ? { ...p, ...updates } : p);
+      });
+
+      return { previousProject };
+    },
+    onError: (err, newTodo, context) => {
+      // Rollback on error
+      if (context?.previousProject) {
+        queryClient.setQueryData(['project', newTodo.projectId], context.previousProject);
+      }
+    },
+    onSettled: (data, error, variables) => {
+      // Always refetch after error or success to ensure server sync
+      queryClient.invalidateQueries({ queryKey: ['project', variables.projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
@@ -136,9 +166,15 @@ export function useUpdateSingleSlide() {
         .from('slides')
         .select('data')
         .eq('id', slideId)
-        .single();
+        .maybeSingle();
       
       if (getError) throw getError;
+      
+      // If the slide was deleted (e.g. during regeneration), we can't update it
+      if (!current) {
+        console.warn(`Slide ${slideId} not found, skipping update`);
+        return null;
+      }
 
       const updatedData = { ...current.data, ...updates };
 
@@ -151,14 +187,16 @@ export function useUpdateSingleSlide() {
         })
         .eq('id', slideId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project', data.project_id] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      if (data) {
+        queryClient.invalidateQueries({ queryKey: ['project', data.project_id] });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+      }
     },
   });
 }
