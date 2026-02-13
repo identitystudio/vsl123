@@ -26,6 +26,8 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleNewProject = () => {
     setCreatingProject(true);
@@ -43,13 +45,25 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
 
   const handleDeleteProject = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
-    if (!confirm('Delete this project?')) return;
+    setDeletingProjectId(projectId);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingProjectId) return;
+    setIsDeleting(true);
     try {
-      await deleteProject.mutateAsync(projectId);
+      await deleteProject.mutateAsync(deletingProjectId);
       toast.success('Project deleted');
+      setDeletingProjectId(null);
     } catch {
       toast.error('Failed to delete project');
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const cancelDelete = () => {
+    setDeletingProjectId(null);
   };
 
   const startEditing = (e: React.MouseEvent, project: { id: string; name: string }) => {
@@ -79,6 +93,49 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
   return (
     <div className="min-h-screen bg-white">
       <Header email={email} />
+
+      {/* Delete Confirmation Modal */}
+      {deletingProjectId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 animate-in zoom-in duration-200">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Project?</h3>
+                <p className="text-sm text-gray-500">
+                  This action cannot be undone. All slides and settings will be permanently deleted.
+                </p>
+              </div>
+              <div className="flex gap-3 w-full mt-2">
+                <Button
+                  variant="outline"
+                  onClick={cancelDelete}
+                  disabled={isDeleting}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-8">
