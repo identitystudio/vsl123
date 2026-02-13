@@ -257,7 +257,6 @@ export function PreviewExport({
   };
 
   const hasSlides = slides.length > 0;
-  const currentSlide = hasSlides ? slides[currentIndex] : undefined;
 
   const playNextSlide = useCallback(() => {
     if (currentIndex < slides.length - 1) {
@@ -1040,7 +1039,7 @@ export function PreviewExport({
       <div className="flex flex-col items-center gap-6">
         {/* Slide preview */}
         <div className="relative group cursor-pointer" onClick={() => onSlideClick?.(currentIndex)}>
-          <SlidePreview slide={currentSlide} scale={1} />
+          <SlidePreview slide={slides[currentIndex]} scale={1} />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
             <div className="opacity-0 group-hover:opacity-100 bg-white/90 text-black px-3 py-1.5 rounded-full text-sm font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all">
               Click to Edit Slide {currentIndex + 1}
