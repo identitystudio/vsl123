@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Zap } from 'lucide-react';
+import { ArrowLeft, Zap, Loader2 } from 'lucide-react';
 import { useProject, useUpdateProject, useUpdateSlides } from '@/hooks/use-project';
 import { StepIndicator } from './step-indicator';
 import { ScriptInput } from './script-input';
@@ -116,9 +116,27 @@ export function EditorContent({ projectId }: EditorContentProps) {
 
   if (isLoading || (isNewProject && !project)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-pulse text-gray-400">
-          {isNewProject ? 'Creating project...' : 'Loading project...'}
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500">
+          <div className="relative">
+            <div className="absolute inset-0 bg-black/5 rounded-full blur-2xl animate-pulse" />
+            <div className="relative w-20 h-20 bg-white rounded-2xl shadow-xl flex items-center justify-center">
+              <Loader2 className="w-10 h-10 text-black animate-spin" />
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-900">
+              {isNewProject ? 'Creating your project...' : 'Loading project...'}
+            </h2>
+            <p className="text-sm text-gray-500">
+              {isNewProject ? 'Setting up your workspace' : 'Please wait'}
+            </p>
+          </div>
+          <div className="flex gap-1.5">
+            <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
         </div>
       </div>
     );

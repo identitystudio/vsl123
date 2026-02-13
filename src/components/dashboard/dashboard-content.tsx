@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Plus, Trash2, Pencil } from 'lucide-react';
+import { Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
@@ -25,12 +25,15 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
 
   const handleNewProject = () => {
+    setCreatingProject(true);
     const newId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     router.push(`/editor/${newId}?new=1`);
     createProject.mutateAsync({ id: newId }).catch(() => {
       toast.error('Failed to create project');
+      setCreatingProject(false);
     });
   };
 
@@ -83,10 +86,14 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
           <Button
             onClick={handleNewProject}
             className="bg-black text-white hover:bg-gray-800 gap-2"
-            disabled={createProject.isPending}
+            disabled={creatingProject}
           >
-            <Plus className="w-4 h-4" />
-            New Project
+            {creatingProject ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            {creatingProject ? 'Creating...' : 'New Project'}
           </Button>
         </div>
 
@@ -189,9 +196,15 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
             <p className="text-gray-500 mb-4">No projects yet</p>
             <Button
               onClick={handleNewProject}
-              className="bg-black text-white hover:bg-gray-800"
+              className="bg-black text-white hover:bg-gray-800 gap-2"
+              disabled={creatingProject}
             >
-              Create your first VSL
+              {creatingProject ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              {creatingProject ? 'Creating...' : 'Create your first VSL'}
             </Button>
           </div>
         ) : null}
