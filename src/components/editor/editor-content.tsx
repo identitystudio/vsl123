@@ -78,6 +78,11 @@ export function EditorContent({ projectId }: EditorContentProps) {
     [projectId, updateSlides]
   );
 
+  const handleSkipAudio = useCallback(() => {
+    setStep(4);
+    router.push(`/editor/${projectId}?step=4`);
+  }, [projectId, router]);
+
   const handleNameSave = async () => {
     if (projectName.trim() && project) {
       await updateProject.mutateAsync({
@@ -103,6 +108,9 @@ export function EditorContent({ projectId }: EditorContentProps) {
       </div>
     );
   }
+
+  const audioSlides = project.slides.filter((s) => s.audioGenerated);
+  const exportSlides = audioSlides.length > 0 ? audioSlides : project.slides;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -174,18 +182,17 @@ export function EditorContent({ projectId }: EditorContentProps) {
             slides={project.slides}
             settings={project.settings}
             onComplete={() => setStep(4)}
-            onSkip={() => setStep(4)}
+            onSkip={handleSkipAudio}
           />
         )}
         {currentStep === 4 && (
           <PreviewExport
             projectId={projectId}
             projectName={project.name}
-            slides={project.slides.filter(s => s.audioGenerated)}
+            slides={exportSlides}
             onSlideClick={(filteredIndex) => {
-              const audioSlides = project.slides.filter(s => s.audioGenerated);
-              const targetSlide = audioSlides[filteredIndex];
-              const originalIndex = project.slides.findIndex(s => s.id === targetSlide.id);
+              const targetSlide = exportSlides[filteredIndex];
+              const originalIndex = project.slides.findIndex((s) => s.id === targetSlide.id);
               if (originalIndex !== -1) {
                 setInitialSlideIndex(originalIndex);
                 setAutoEdit(true);

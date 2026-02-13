@@ -256,7 +256,8 @@ export function PreviewExport({
     toast.success('API credentials saved');
   };
 
-  const currentSlide = slides[currentIndex];
+  const hasSlides = slides.length > 0;
+  const currentSlide = hasSlides ? slides[currentIndex] : undefined;
 
   const playNextSlide = useCallback(() => {
     if (currentIndex < slides.length - 1) {
@@ -270,7 +271,24 @@ export function PreviewExport({
   useEffect(() => {
     if (!playing) return;
 
+    const cleanup = () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+
     const slide = slides[currentIndex];
+
+    if (!slide) {
+      setPlaying(false);
+      cleanup();
+      return cleanup;
+    }
 
     if (slide.audioUrl) {
       // Play audio, advance when done
@@ -288,16 +306,7 @@ export function PreviewExport({
       timerRef.current = setTimeout(playNextSlide, displayTime);
     }
 
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
+    return cleanup;
   }, [playing, currentIndex, slides, playNextSlide]);
 
   const handleExport = async () => {
@@ -1012,6 +1021,19 @@ export function PreviewExport({
       setExportProgress(0);
     }
   };
+
+  if (!hasSlides) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-gray-200 bg-white/60 p-10 text-center">
+          <div className="text-lg font-semibold text-gray-900">No audio slides yet</div>
+          <div className="text-sm text-gray-500">
+            Generate voiceover first, or go back and continue without audio.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
