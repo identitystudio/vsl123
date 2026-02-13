@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
 Text: "${slideText}"
 ${emotion ? `Emotion: ${emotion}` : ''}
 ${sceneTitle ? `Scene: ${sceneTitle}` : ''}
-${userPrompt ? `User Requirements (IMPORTANT): ${userPrompt}` : ''}
+${userPrompt ? `CRITICAL - USER VISUAL DIRECTION: "${userPrompt}"\nYou MUST follow the User Visual Direction above. It overrides any other default style logic.` : ''}
 
-Reply with ONLY the search term, nothing else. The search term MUST respect the User Requirements if provided (e.g., age, ethnicity, setting). Examples:
+Reply with ONLY the search term, nothing else. The search term MUST respect the User Visual Direction if provided (e.g., if user says "black and white noir", add "noir" or "black and white" to the term). Examples:
 - "You watched your mom struggle to read" → "mother reading difficulty"
 - "We made $2 million" → "business success celebration"
 - "I was broke and desperate" → "stressed person finances"

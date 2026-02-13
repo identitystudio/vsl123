@@ -123,6 +123,7 @@ export function useUpdateSlides() {
       if (slides.length > 0) {
         const { error: insertError } = await supabase.from('slides').insert(
           slides.map((s, index) => ({
+            id: s.id, // Preserve ID
             project_id: projectId,
             order_index: index,
             data: s,

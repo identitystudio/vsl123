@@ -208,6 +208,8 @@ export function SlideReviewer({
     [projectId, updateSlides]
   );
 
+  const longPressTriggeredRef = useRef(false);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -233,6 +235,8 @@ export function SlideReviewer({
   });
 
   const handleLooksGood = () => {
+    if (longPressTriggeredRef.current) return;
+    
     const slideToSave = { ...slides[currentIndex], reviewed: true };
     const updated = [...slides];
     updated[currentIndex] = slideToSave;
@@ -250,12 +254,14 @@ export function SlideReviewer({
 
   // Hold "Looks Good" for 5 seconds → approve all remaining slides
   const handleHoldStart = () => {
+    longPressTriggeredRef.current = false;
     holdStartRef.current = Date.now();
     const animate = () => {
       const elapsed = Date.now() - holdStartRef.current;
       const progress = Math.min(100, (elapsed / HOLD_DURATION) * 100);
       setHoldProgress(progress);
       if (progress >= 100) {
+        longPressTriggeredRef.current = true;
         handleApproveAllRemaining();
         return;
       }
@@ -317,13 +323,18 @@ export function SlideReviewer({
       saveSingleSlide(slideToSave);
     }
 
-    setSlides(updated);
-    setEditing(false);
-    setEditSlide(null);
 
-    // Move to next slide
+    setSlides(updated);
+
+    // Move to next slide and keep editing, or close if done
     if (currentIndex < updated.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
+      setEditing(true);
+      setEditSlide({ ...updated[nextIndex] });
+    } else {
+      setEditing(false);
+      setEditSlide(null);
     }
   };
 

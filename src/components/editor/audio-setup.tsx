@@ -293,6 +293,60 @@ export function AudioSetup({
     toast.success(`Audio generated for slides ${start} to ${end}!`);
   };
 
+  const handleRegenerateAll = async () => {
+    if (!selectedVoice) {
+      toast.error('Please select a voice first');
+      return;
+    }
+
+    if (!confirm('This will regenerate audio for ALL slides using the selected voice. This consumes credits. Continue?')) {
+      return;
+    }
+
+    setGenerating(true);
+    setGeneratingProgress(0);
+
+    let completed = 0;
+
+    for (const slide of slides) {
+      const idx = slides.findIndex(s => s.id === slide.id);
+      try {
+        const response = await fetch('/api/elevenlabs-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: slide.fullScriptText,
+            voiceId: selectedVoice,
+            apiKey,
+            stability: 0.5,
+            similarityBoost: 0.75,
+            speed: 1.0,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          await updateSingleSlide.mutateAsync({
+            slideId: slide.id,
+            updates: {
+              audioUrl: data.audioContent,
+              audioDuration: data.duration,
+              audioGenerated: true,
+            },
+          });
+        }
+      } catch {
+        // Continue
+      }
+
+      completed++;
+      setGeneratingProgress(Math.round((completed / slides.length) * 100));
+    }
+
+    setGenerating(false);
+    toast.success('All audio regenerated!');
+  };
+
   const [voiceSearch, setVoiceSearch] = useState('');
 
   const filteredVoices = voices.filter(v => 
@@ -410,6 +464,20 @@ export function AudioSetup({
                       >
                         Generate Range
                       </Button>
+                      
+                      <div className="pt-2 border-t border-gray-200 mt-2">
+                        <Button
+                          onClick={handleRegenerateAll}
+                          variant="destructive"
+                          className="w-full h-10 text-[11px] font-black uppercase tracking-widest shadow-lg shadow-red-500/10"
+                          disabled={!selectedVoice}
+                        >
+                          Regenerate ALL Slides
+                        </Button>
+                        <p className="text-[9px] text-gray-400 text-center mt-1">
+                          Warning: This will use credits for every slide.
+                        </p>
+                      </div>
                     </div>
                   )}
 

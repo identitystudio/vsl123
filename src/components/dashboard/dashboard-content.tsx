@@ -1,11 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useProjects, useCreateProject, useDeleteProject } from '@/hooks/use-projects';
+import { useUpdateProject } from '@/hooks/use-project';
 import { toast } from 'sonner';
 
 interface DashboardContentProps {
@@ -18,6 +21,10 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
   const { data: projects, isInitialLoading } = useProjects(userId);
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
+  const updateProject = useUpdateProject();
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   const handleNewProject = async () => {
     try {
@@ -41,6 +48,30 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
     } catch {
       toast.error('Failed to delete project');
     }
+  };
+
+  const startEditing = (e: React.MouseEvent, project: { id: string; name: string }) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setEditingId(project.id);
+    setEditingName(project.name);
+  };
+
+  const saveEditing = async () => {
+    if (!editingId) return;
+    if (editingName.trim()) {
+      try {
+    await updateProject.mutateAsync({
+      projectId: editingId,
+      updates: { name: editingName.trim() },
+    });
+    toast.success('Project name updated');
+      } catch {
+    toast.error('Failed to update project name');
+      }
+    }
+    setEditingId(null);
+    setEditingName('');
   };
 
   return (
@@ -79,7 +110,34 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
                 {/* Decorative background element */}
                 <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-gray-50 rounded-full group-hover:bg-black/5 transition-colors" />
 
-                <h3 className="font-bold text-xl mb-1 relative z-10">{project.name}</h3>
+                {editingId === project.id ? (
+                  <div className="relative z-20 mb-2">
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onBlur={saveEditing}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveEditing();
+                        if (e.key === 'Escape') setEditingId(null);
+                      }}
+                      autoFocus
+                      className="font-bold text-xl h-9 px-2 -ml-2 w-full"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mb-1 relative z-10">
+                    <h3 className="font-bold text-xl truncate pr-2">{project.name}</h3>
+                    <button
+                      onClick={(e) => startEditing(e, project)}
+                      className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-black"
+                      title="Rename project"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                
                 <div className="flex items-center gap-2 mb-4 relative z-10">
                   <span className="text-sm px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
                     {project.slides?.length || 0} slides

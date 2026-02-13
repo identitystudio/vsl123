@@ -729,26 +729,37 @@ export function ScriptInput({
             const slideIndex = styledSlides.findIndex((s) => s.id === slide.id);
             if (slideIndex !== -1) {
               const s = styledSlides[slideIndex];
-              if (!s.backgroundImage) {
-                s.backgroundImage = { url: '', opacity: 60, blur: 8, displayMode: 'blurred' };
-              }
-              s.backgroundImage.url = imgData.photos[0].url;
-              s.hasBackgroundImage = true;
+              
+              // If this is a "headshot-bio" slide (white bg + has headshot slot),
+              // put the fetched image into the circular headshot slot.
+              if (s.headshot && s.style.background === 'white') {
+                s.headshot.imageUrl = imgData.photos[0].url;
+                s.hasBackgroundImage = false; // It's a clean white slide with a headshot
+                s.backgroundImage = undefined;
+              } 
+              // Otherwise, it's a standard background/split image
+              else {
+                if (!s.backgroundImage) {
+                  s.backgroundImage = { url: '', opacity: 60, blur: 8, displayMode: 'blurred' };
+                }
+                s.backgroundImage.url = imgData.photos[0].url;
+                s.hasBackgroundImage = true;
 
-              // Auto-apply layout based on index for variety
-              const useSplit = slideIndex % 2 === 0; // Rotate 50/50 as per new prompt
-              if (useSplit) {
-                 s.style.background = 'split';
-                 s.style.textColor = 'black';
-                 s.backgroundImage.displayMode = 'split';
-                 s.backgroundImage.opacity = 100;
-                 s.backgroundImage.blur = 0;
-                 s.backgroundImage.imagePositionY = 35;
-              } else {
-                 s.style.background = 'image';
-                 s.style.textColor = 'white';
-                 s.backgroundImage.displayMode = 'blurred';
-                 s.backgroundImage.opacity = 60;
+                // Auto-apply layout based on index for variety
+                const useSplit = slideIndex % 2 === 0; // Rotate 50/50
+                if (useSplit) {
+                   s.style.background = 'split';
+                   s.style.textColor = 'black';
+                   s.backgroundImage.displayMode = 'split';
+                   s.backgroundImage.opacity = 100;
+                   s.backgroundImage.blur = 0;
+                   s.backgroundImage.imagePositionY = 35;
+                } else {
+                   s.style.background = 'image';
+                   s.style.textColor = 'white';
+                   s.backgroundImage.displayMode = 'blurred';
+                   s.backgroundImage.opacity = 60;
+                }
               }
             }
           }
