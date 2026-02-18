@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const textResponse = await generateText({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-haiku-20240307',
       max_tokens: 2048,
       messages: [
         {

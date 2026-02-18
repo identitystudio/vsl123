@@ -1,0 +1,184 @@
+const express = require('express');
+const puppeteer = require('puppeteer');
+const fs = require('fs-extra');
+const path = require('path');
+const { exec } = require('child_process');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json({ limit: '1000mb' })); // Higher limit for massive slide data
+app.use(cors());
+
+const PORT = 3001;
+
+// Helper to run shell commands
+const runCmd = (cmd) => new Promise((resolve, reject) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`Cmd Error: ${cmd}`, stderr);
+            reject(error);
+        } else resolve(stdout);
+    });
+});
+
+// SHARED FUNCTION: Render Slides (High Performance)
+async function renderSlides(slides, framesDir, audioDir) {
+    
+    // 1. Download Audio (Parallel)
+    console.log('Phase 1: Downloading Audio Assets...');
+    const AUDIO_BATCH_SIZE = 30;
+    for (let i = 0; i < slides.length; i += AUDIO_BATCH_SIZE) {
+        const chunk = slides.slice(i, i + AUDIO_BATCH_SIZE);
+        await Promise.all(chunk.map(async (slide, idx) => {
+            if (!slide.audioUrl) return;
+            const globalIndex = i + idx;
+            const slideId = String(globalIndex).padStart(4, '0');
+            const audioPath = path.join(audioDir, `audio_${slideId}.mp3`);
+            
+            if (slide.audioUrl.startsWith('data:')) {
+                const base64Data = slide.audioUrl.split(';base64,').pop();
+                await fs.writeFile(audioPath, base64Data, { encoding: 'base64' });
+            } else {
+                try { 
+                    await runCmd(`curl -s -L -o "${audioPath}" "${slide.audioUrl}"`); 
+                } catch(e) {
+                    console.error(`Failed to download audio for slide ${globalIndex}`);
+                }
+            }
+        }));
+    }
+
+    // 2. Render Images (Concurrent)
+    const BROWSER_BATCH_SIZE = 50;  
+    const CONCURRENCY = 5;          
+
+    for (let i = 0; i < slides.length; i += BROWSER_BATCH_SIZE) {
+        const chunk = slides.slice(i, i + BROWSER_BATCH_SIZE);
+        console.log(`Phase 2: Rendering slides ${i} to ${i + chunk.length}...`);
+
+        const browser = await puppeteer.launch({
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        });
+        
+        try {
+            for (let j = 0; j < chunk.length; j += CONCURRENCY) {
+                const subChunk = chunk.slice(j, j + CONCURRENCY);
+                await Promise.all(subChunk.map(async (slide, subIdx) => {
+                    const globalIndex = i + j + subIdx;
+                    const slideId = String(globalIndex).padStart(4, '0');
+                    const framePath = path.join(framesDir, `slide_${slideId}.png`);
+                    
+                    const page = await browser.newPage();
+                    await page.setViewport({ width: 1920, height: 1080 });
+
+                    const htmlContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet"><style>body { margin: 0; padding: 0; width: 1920px; height: 1080px; overflow: hidden; font-family: 'Inter', sans-serif; background: white; }</style></head><body>${slide.htmlContent || '<div></div>'}</body></html>`;
+
+                    try {
+                        await page.setContent(htmlContent, { waitUntil: 'networkidle2', timeout: 0 });
+                        await page.screenshot({ path: framePath, type: 'png' });
+                    } catch(e) {
+                        console.error(`Error rendering slide ${globalIndex}:`, e.message);
+                    } finally {
+                        await page.close();
+                    }
+                }));
+            }
+        } finally {
+            await browser.close();
+        }
+    }
+}
+
+// ENDPOINT 1: EXPORT MP4 VIDEO
+app.post('/render', async (req, res) => {
+    req.setTimeout(0); 
+    res.setTimeout(0);
+
+    const { slides, projectName } = req.body;
+    const jobId = `job_video_${Date.now()}`;
+    const workDir = path.join(__dirname, 'temp', jobId);
+    const framesDir = path.join(workDir, 'frames');
+    const audioDir = path.join(workDir, 'audio');
+    const segmentsDir = path.join(workDir, 'segments');
+    const outputVideo = path.join(workDir, 'output.mp4');
+    const fileListPath = path.join(workDir, 'files.txt');
+
+    console.log(`[${jobId}] Starting VIDEO render (${slides.length} slides)`);
+
+    try {
+        await fs.ensureDir(framesDir);
+        await fs.ensureDir(audioDir);
+        await fs.ensureDir(segmentsDir);
+
+        // 1. Render all images
+        await renderSlides(slides, framesDir, audioDir);
+
+        // 2. Create Segments in Parallel (SPEED BOOST)
+        console.log(`[${jobId}] Encoding segments in parallel...`);
+        const ENCODE_CONCURRENCY = 8; // Encode 8 segments at once
+        const videoSegments = [];
+
+        for (let i = 0; i < slides.length; i += ENCODE_CONCURRENCY) {
+            const chunk = slides.slice(i, i + ENCODE_CONCURRENCY);
+            await Promise.all(chunk.map(async (s, idx) => {
+                const globalIndex = i + idx;
+                const slideId = String(globalIndex).padStart(4, '0');
+                const framePath = path.join(framesDir, `slide_${slideId}.png`);
+                const audioPath = path.join(audioDir, `audio_${slideId}.mp3`);
+                const segmentPath = path.join(segmentsDir, `seg_${slideId}.mp4`);
+                
+                let hasAudio = await fs.pathExists(audioPath);
+                if (hasAudio) {
+                    await runCmd(`ffmpeg -y -loop 1 -i "${framePath}" -i "${audioPath}" -c:v libx264 -preset ultrafast -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest "${segmentPath}"`);
+                } else {
+                    await runCmd(`ffmpeg -y -loop 1 -i "${framePath}" -f lavfi -i anullsrc -c:v libx264 -preset ultrafast -tune stillimage -c:a aac -t 3 -pix_fmt yuv420p "${segmentPath}"`);
+                }
+            }));
+            process.stdout.write(`Encoded ${i + chunk.length}/${slides.length} segments...\r`);
+        }
+
+        // 3. Concatenate (Fast)
+        console.log(`\n[${jobId}] Concatenating...`);
+        const segmentFiles = (await fs.readdir(segmentsDir))
+            .filter(f => f.endsWith('.mp4'))
+            .sort()
+            .map(f => `file '${path.join(segmentsDir, f)}'`);
+            
+        await fs.writeFile(fileListPath, segmentFiles.join('\n'));
+        await runCmd(`ffmpeg -f concat -safe 0 -i "${fileListPath}" -c copy "${outputVideo}"`);
+
+        console.log(`[${jobId}] Video Ready!`);
+        res.download(outputVideo, `${projectName.replace(/\s+/g, '_')}.mp4`, () => fs.remove(workDir).catch(()=>{}));
+
+    } catch (err) {
+        console.error(`[${jobId}] Error:`, err);
+        res.status(500).json({ error: err.message });
+        fs.remove(workDir).catch(()=>{});
+    }
+});
+
+// ENDPOINT 2: EXPORT ZIP
+app.post('/render-zip', async (req, res) => {
+    req.setTimeout(0); 
+    res.setTimeout(0);
+    const { slides, projectName } = req.body;
+    const jobId = `job_zip_${Date.now()}`;
+    const workDir = path.join(__dirname, 'temp', jobId);
+    const framesDir = path.join(workDir, 'frames');
+    const audioDir = path.join(workDir, 'audio');
+    const outputZip = path.join(workDir, 'output.zip');
+
+    try {
+        await fs.ensureDir(framesDir);
+        await fs.ensureDir(audioDir);
+        await renderSlides(slides, framesDir, audioDir);
+        console.log(`[${jobId}] Zipping...`);
+        await runCmd(`cd "${workDir}" && zip -r -q output.zip frames audio`);
+        res.download(outputZip, `${projectName.replace(/\s+/g, '_')}.zip`, () => fs.remove(workDir).catch(()=>{}));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+        fs.remove(workDir).catch(()=>{});
+    }
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`VSL Renderer running on port ${PORT}`));

@@ -51,7 +51,7 @@ async function processChunk(
 
   try {
     const text = await generateText({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       max_tokens: 4096,
       system: `You are a World-Class VSL (Video Sales Letter) Creative Director and Slide Designer. 
 Your goal is to create a high-conversion, visually stunning, and cinematic slide deck.

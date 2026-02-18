@@ -44,7 +44,7 @@ async function processChunk(
   console.log(`[AI] Splitting script chunk ${chunkIndex + 1} of ${totalChunks}...`);
   try {
     const text = await generateText({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-3-haiku-20240307',
       max_tokens: 4096,
       messages: [
         {
