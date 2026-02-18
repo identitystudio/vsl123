@@ -256,6 +256,7 @@ export function SlideEditPanel({
   const [aiPrompt, setAiPrompt] = useState('');
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [loadingInfographic, setLoadingInfographic] = useState(false);
+  const [aiStylingWords, setAiStylingWords] = useState(false);
   const localHeadshotRef = useRef<HTMLInputElement>(null);
   const headshotRef = headshotInputRef || localHeadshotRef;
   const bgImageUploadRef = useRef<HTMLInputElement>(null);
@@ -326,6 +327,80 @@ export function SlideEditPanel({
       .map((w) => w.replace(/[.,!?;:'"()]/g, ''))
       .filter(Boolean);
     onUpdate({ ...slide, boldWords: words });
+  };
+
+  // AI-powered word styling
+  const handleAiStyleWords = async () => {
+    setAiStylingWords(true);
+    try {
+      const response = await fetch('/api/style-words', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slideText: slide.fullScriptText,
+          emotion: slide.emotion,
+          sceneTitle: slide.sceneTitle,
+          preset: slide.style.background,
+          userPrompt: aiPrompt,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to style words');
+
+      const decision = await response.json();
+      
+      // Apply AI's word styling decisions
+      const newUnderlineStyles: Record<string, UnderlineStyle> = {};
+      decision.underlineWords?.forEach((w: string) => {
+        newUnderlineStyles[w] = decision.underlineStyle || 'brush-red';
+      });
+
+      const newCircleStyles: Record<string, CircleStyle> = {};
+      decision.circleWords?.forEach((w: string) => {
+        newCircleStyles[w] = decision.circleStyle || 'red-solid';
+      });
+
+      onUpdate({
+        ...slide,
+        boldWords: decision.boldWords || [],
+        underlineWords: decision.underlineWords || [],
+        redWords: decision.redWords || [],
+        circleWords: decision.circleWords || [],
+        underlineStyles: newUnderlineStyles,
+        circleStyles: newCircleStyles,
+      });
+
+      const totalEmphasis = 
+        (decision.boldWords?.length || 0) + 
+        (decision.underlineWords?.length || 0) + 
+        (decision.redWords?.length || 0) + 
+        (decision.circleWords?.length || 0);
+
+      if (totalEmphasis > 0) {
+        toast.success(`AI styled ${totalEmphasis} word(s)`);
+      } else {
+        toast.info('AI chose minimal emphasis for this slide');
+      }
+    } catch (error) {
+      console.error('AI word styling error:', error);
+      toast.error('Failed to style words with AI');
+    } finally {
+      setAiStylingWords(false);
+    }
+  };
+
+  // Clear all word emphasis
+  const handleClearEmphasis = () => {
+    onUpdate({
+      ...slide,
+      boldWords: [],
+      underlineWords: [],
+      redWords: [],
+      circleWords: [],
+      underlineStyles: {},
+      circleStyles: {},
+    });
+    toast.success('Cleared all emphasis');
   };
 
   // Fetch AI-generated infographic content (visual + bundled lines)
@@ -710,8 +785,22 @@ export function SlideEditPanel({
         )}
       </div>
 
-      {/* Bold All + Instructions */}
-      <div className="flex items-center gap-3 text-sm text-gray-500">
+      {/* Word Styling Controls */}
+      <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          onClick={handleAiStyleWords}
+          disabled={aiStylingWords}
+        >
+          {aiStylingWords ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5" />
+          )}
+          AI Style
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -721,7 +810,16 @@ export function SlideEditPanel({
           <Bold className="w-3.5 h-3.5" />
           Bold All
         </Button>
-        <span>Click any word to style it &bull; Click here to edit text</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-gray-400 hover:text-gray-600"
+          onClick={handleClearEmphasis}
+        >
+          <X className="w-3.5 h-3.5" />
+          Clear
+        </Button>
+        <span className="text-xs">Click words to style manually</span>
       </div>
 
       {/* Slide Styling */}
@@ -1324,7 +1422,7 @@ export function SlideEditPanel({
 
                 return (
                   <button 
-                    key={s.id} 
+                    key={`${s.id}-${idx}`} 
                     type="button"
                     onClick={() => onJumpToSlide?.(originalIndex)}
                     className={`relative aspect-video rounded border overflow-hidden bg-white group cursor-pointer transition-all hover:ring-2 hover:ring-black/20 ${

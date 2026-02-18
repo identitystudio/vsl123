@@ -423,7 +423,8 @@ export function ScriptInput({
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    console.log('🚀 AI Generation started: Initializing script processing...');
+    console.log('%c🚀 AI SLIDE GENERATION STARTED', 'background: #4CAF50; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
+    console.log('━'.repeat(50));
 
     try {
       // Helper to check for cancellation
@@ -454,6 +455,20 @@ export function ScriptInput({
       }
 
       const splitData = await splitResponse.json();
+
+      // Log debug info to browser console
+      if (splitData.debug) {
+        console.log('%c🔍 AI DEBUG INFO (split-script)', 'background: #FF5722; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
+        console.log('📋 Model Requested:', splitData.debug.modelRequested);
+        console.log('📋 Model Sent:', splitData.debug.modelSent);
+        console.log('📋 Provider:', splitData.debug.provider);
+        if (splitData.debug.error) {
+          console.log('%c❌ Error:', 'color: red; font-weight: bold;', splitData.debug.error);
+        }
+        if (splitData.debug.jsonBodyPreview) {
+          console.log('📋 JSON Body Preview:', splitData.debug.jsonBodyPreview);
+        }
+      }
 
       if (splitData.error) {
         throw new Error(splitData.error);
@@ -492,7 +507,8 @@ export function ScriptInput({
       }
 
       setProgress(35);
-      console.log(`🧠 AI Splitter complete. Now designing visual styles for ${slides.length} slides...`);
+      console.log(`%c🧠 STEP 1 COMPLETE: ${slides.length} slides created`, 'background: #9C27B0; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
+      console.log('🎨 Now requesting AI style decisions...');
 
       checkCancelled();
 
@@ -539,11 +555,33 @@ export function ScriptInput({
         splitRatio?: number;
         blur?: number;
         opacity?: number;
-      }> } = { styles: [] };
+      }>; debug?: {
+        modelRequested: string;
+        modelSent: string;
+        provider: string;
+        error?: string;
+        jsonBodyPreview?: string;
+      } } = { styles: [] };
 
       if (styleResponse.ok) {
         styleData = await styleResponse.json();
-        console.log('💎 AI Style Decisions Received:', styleData.styles);
+        
+        // Log debug info to browser console
+        if (styleData.debug) {
+          console.log('%c🔍 AI DEBUG INFO (style-slides)', 'background: #FF5722; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
+          console.log('📋 Model Requested:', styleData.debug.modelRequested);
+          console.log('📋 Model Sent:', styleData.debug.modelSent);
+          console.log('📋 Provider:', styleData.debug.provider);
+          if (styleData.debug.error) {
+            console.log('%c❌ Error:', 'color: red; font-weight: bold;', styleData.debug.error);
+          }
+          if (styleData.debug.jsonBodyPreview) {
+            console.log('📋 JSON Body Preview:', styleData.debug.jsonBodyPreview);
+          }
+        }
+        
+        console.log(`%c💎 STEP 2 COMPLETE: ${styleData.styles?.length || 0} style decisions`, 'background: #9C27B0; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
+        console.table(styleData.styles?.slice(0, 5).map(s => ({ slideId: s.slideId.slice(0,8), preset: s.preset, keyword: s.refinedImageKeyword })));
       }
 
       setProgress(50);
@@ -665,15 +703,34 @@ export function ScriptInput({
 
       setProgress(60);
 
-      // Step 3: Fetch images for slides that have a keyword (even if not marked as image-bg initially)
+      // Step 3: Fetch images for ALL slides (user requested every slide has images)
+      // Generate default keyword from script text if none provided
+      const generateKeywordFromText = (text: string): string => {
+        // Extract key nouns/words from the script text for image search
+        const words = text.split(/\s+/).filter(w => w.length > 3);
+        // Take up to 3 meaningful words
+        return words.slice(0, 3).join(' ') || 'professional business';
+      };
+
+      // Ensure ALL slides have an imageKeyword
+      styledSlides.forEach(s => {
+        if (!s.imageKeyword) {
+          s.imageKeyword = generateKeywordFromText(s.fullScriptText);
+          console.log(`[AUTO KEYWORD] Slide "${s.fullScriptText.substring(0, 30)}..." → "${s.imageKeyword}"`);
+        }
+      });
+
       const slidesNeedingImages = styledSlides.filter(
-        (s) => s.imageKeyword && !s.backgroundImage?.url
+        (s) => !s.backgroundImage?.url
       );
+
+      console.log(`%c🖼️ FETCHING IMAGES: ${slidesNeedingImages.length}/${styledSlides.length} slides`, 'background: #FF9800; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
 
       const imageCache = new Map<string, any>();
       const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
       let pexelsBlocked = false;
       let pixabayBlocked = false;
+      let successCount = 0;
 
       for (let i = 0; i < slidesNeedingImages.length; i++) {
         checkCancelled();
@@ -683,49 +740,60 @@ export function ScriptInput({
           let imgData = imageCache.get(slide.imageKeyword!);
 
           if (!imgData) {
+            console.log(`🔍 Searching for images: ${slide.imageKeyword}`);
             // Priority 1: Pexels
             if (!pexelsBlocked) {
-              // Add a small delay between every request to satisfy Pexels
-              if (i > 0) await sleep(450); 
+              // Reduced delay - be more aggressive with requests (max 6 per second)
+              if (i > 0) await sleep(166); // 166ms ≈ 6 requests/second
 
               const imgResponse = await fetch('/api/pexels-search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: slide.imageKeyword, perPage: i === 0 ? 3 : 1 }),
+                body: JSON.stringify({ query: slide.imageKeyword, perPage: 1 }),
                 signal,
               });
 
               if (imgResponse.status === 429) {
-                console.warn('⚠️ Pexels rate limit reached. Switching to Pixabay fallback.');
+                console.warn(`⚠️ Pexels rate limit at slide ${i + 1}/${slidesNeedingImages.length}. Switching to Pixabay.`);
                 pexelsBlocked = true;
               } else if (imgResponse.ok) {
                 imgData = await imgResponse.json();
+                console.log(`📷 Pexels API returned ${imgData.photos?.length || 0} photos for: ${slide.imageKeyword}`);
                 imageCache.set(slide.imageKeyword!, imgData);
+              } else {
+                console.warn(`⚠️ Pexels API error for "${slide.imageKeyword}": ${imgResponse.status}`);
               }
             }
 
             // Priority 2: Pixabay Fallback (if Pexels failed or is already blocked)
             if ((!imgData || !imgData.photos?.[0]?.url) && !pixabayBlocked) {
-              if (i > 0) await sleep(200); // Pixabay is less strict so we can go faster
+              if (i > 0) await sleep(100); // Pixabay is less strict so we can go faster
               const pixResponse = await fetch('/api/pixabay-search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: slide.imageKeyword }),
+                body: JSON.stringify({ query: slide.imageKeyword, perPage: 1 }),
                 signal,
               });
 
               if (pixResponse.ok) {
                 imgData = await pixResponse.json();
+                console.log(`🖼️ Pixabay API returned ${imgData.photos?.length || 0} photos for: ${slide.imageKeyword}`);
                 imageCache.set(slide.imageKeyword!, imgData);
               } else if (pixResponse.status === 429 || pixResponse.status === 500) {
-                // If 500 probably key missing or blocked
-                console.warn('⚠️ Pixabay rate limit reached or API error. No more Pixabay images.');
-                pixabayBlocked = true;
+                console.warn(`⚠️ Pixabay API error for "${slide.imageKeyword}": ${pixResponse.status}`);
+                if (pixResponse.status === 429) {
+                  console.warn('⚠️ Pixabay rate limit reached. No more Pixabay images.');
+                  pixabayBlocked = true;
+                }
+              } else {
+                console.warn(`⚠️ Pixabay API error for "${slide.imageKeyword}": ${pixResponse.status}`);
               }
             }
           }
 
           if (imgData && imgData.photos?.[0]?.url) {
+            successCount++;
+            console.log(`✅ Image ${successCount}/${slidesNeedingImages.length}: ${slide.imageKeyword}`);
             const slideIndex = styledSlides.findIndex((s) => s.id === slide.id);
             if (slideIndex !== -1) {
               const s = styledSlides[slideIndex];
@@ -762,9 +830,12 @@ export function ScriptInput({
                 }
               }
             }
+          } else {
+            console.warn(`⚠️ No image found for slide ${i + 1}: ${slide.imageKeyword}`);
           }
         } catch (err) {
-          console.error(`Failed to fetch image for: ${slide.imageKeyword}`, err);
+          console.error(`❌ Error fetching image for slide ${i + 1}: ${slide.imageKeyword}`, err);
+          // Continue to next slide instead of breaking
         }
 
         // Update progress granularly for every single image
@@ -772,6 +843,8 @@ export function ScriptInput({
         const currentProgress = 60 + ((i + 1) / totalSteps) * 25;
         setProgress(currentProgress);
       }
+      
+      console.log(`%c📸 IMAGE FETCH COMPLETE: ${successCount}/${slidesNeedingImages.length} images`, 'background: #2196F3; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
 
       setProgress(88);
 
@@ -821,7 +894,10 @@ export function ScriptInput({
           `${styledSlides.length} slides styled with ${imageCount} images${infographicCount > 0 ? ` and ${infographicCount} infographics` : ''}. Magic complete!`
         );
       }
-      console.log('✅ AI Designing complete! All slides have been styled and images fetched.');
+      console.log('━'.repeat(50));
+      console.log(`%c✅ AI GENERATION COMPLETE`, 'background: #4CAF50; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
+      console.log(`📊 Summary: ${styledSlides.length} slides | ${imageCount} images | ${infographicCount} infographics`);
+      console.log('━'.repeat(50));
       onSlidesGenerated(styledSlides);
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message === 'AbortError') {

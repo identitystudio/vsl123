@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateText } from '@/lib/ai-provider';
+import { generateText, lastDebugInfo } from '@/lib/ai-provider';
 
 // Split script into sentences
 function splitIntoSentences(script: string): string[] {
@@ -51,17 +51,24 @@ async function processChunk(
           role: 'user',
           content: `Split these VSL script lines into slides grouped by scenes. This is chunk ${chunkIndex + 1} of ${totalChunks}.
 
+⚠️ CRITICAL RULE - EACH LINE = EXACTLY ONE SLIDE:
+- EVERY line provided must become EXACTLY ONE slide
+- DO NOT combine multiple lines into a single slide
+- DO NOT skip or omit any lines
+- Each slide gets only ONE line of text
+
 RULES:
-- Each slide = 1-2 lines (keep short)
-- DO NOT repeat the same text across multiple slides. Each unique line from the script should appear exactly once in the entire output.
-- Group into scenes (Hook, Problem, Agitation, Solution, Authority, Proof, CTA, Close)
+- Assign each line to a scene (Hook, Problem, Agitation, Solution, Authority, Proof, CTA, Close)
+- Assign an appropriate emotion to each scene
 - Mark EVERY slide (100%) as hasImage:true
-- IMPORTANT: For EVERY slide, provide an imageKeyword — a descriptive cinematic stock photo search term.
+- For EVERY slide, provide an imageKeyword — a descriptive cinematic stock photo search term.
 - Return ONLY a valid JSON array of scenes.
 
 Format: [{"sceneNumber":1,"title":"Scene Name","emotion":"hook","slides":[{"fullScriptText":"text here","hasImage":true,"imageKeyword":"visual search term"}]}]
 
-LINES:
+IMPORTANT: You must include ALL ${sentences.length} lines from the input. Each one becomes a slide.
+
+LINES TO CONVERT (${sentences.length} lines total):
 ${numberedSentences}`,
         },
       ],
@@ -149,11 +156,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       scenes: allScenes,
       stats: { totalSlides, imageSlides },
+      debug: lastDebugInfo,
     });
   } catch (error: unknown) {
     console.error('Split script error:', error);
     const errorMessage =
       error instanceof Error ? error.message : 'Failed to split script';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, debug: lastDebugInfo }, { status: 500 });
   }
 }
