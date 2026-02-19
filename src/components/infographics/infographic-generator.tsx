@@ -42,6 +42,7 @@ export function InfographicGenerator({
   const [saving, setSaving] = useState(false);
   const [generatingVideos, setGeneratingVideos] = useState<Record<string, boolean>>({});
   const [generatedVideos, setGeneratedVideos] = useState<Record<string, { uri: string; data?: string }>>({});
+  const [videoPrompt, setVideoPrompt] = useState(initialPrompt);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -158,13 +159,14 @@ export function InfographicGenerator({
     setGeneratingVideos((prev) => ({ ...prev, [image.asset_id]: true }));
     try {
       console.log('Starting video generation for:', image.display_name);
+      const effectiveVideoPrompt = (videoPrompt || prompt || 'Create a video based on this image').trim();
       
       const response = await fetch('/api/image-to-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageUrl: image.secure_url,
-          prompt: prompt || 'Create a video based on this image',
+          prompt: effectiveVideoPrompt,
         }),
       });
 
@@ -265,6 +267,22 @@ export function InfographicGenerator({
               </p>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Video Prompt (optional)
+              </label>
+              <Textarea
+                value={videoPrompt}
+                onChange={(e) => setVideoPrompt(e.target.value)}
+                placeholder="Describe how the video should move, pacing, camera motions, mood, and audio cues..."
+                className="min-h-24 resize-none"
+                disabled={loading}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Used when generating video from an image. Defaults to the main prompt if left blank.
+              </p>
+            </div>
+
             <Button
               onClick={handleGenerate}
               disabled={loading || !prompt.trim()}
@@ -345,6 +363,20 @@ export function InfographicGenerator({
                         </span>
                       </div>
                       <div className="space-y-2">
+                        {generatedVideos[image.asset_id] && (
+                          <div className="w-full rounded-md border border-gray-200 p-2 bg-white">
+                            <video
+                              key={image.asset_id}
+                              className="w-full rounded"
+                              controls
+                              src={generatedVideos[image.asset_id].data
+                                ? `data:video/mp4;base64,${generatedVideos[image.asset_id].data}`
+                                : generatedVideos[image.asset_id].uri}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Preview</p>
+                          </div>
+                        )}
+
                         <Button
                           onClick={() => handleDownload(image)}
                           variant="outline"
