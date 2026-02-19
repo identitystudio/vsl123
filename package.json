@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.72.1",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@google/genai": "^1.42.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^7.3.0",
     "@supabase/ssr": "^0.8.0",

@@ -91,12 +91,31 @@ export interface AudioSettings {
   speed: number;            // 0.7-1.2
 }
 
+export interface InfographicData {
+  prompt: string;
+  images: Array<{
+    asset_id: string;
+    public_id: string;
+    secure_url: string;
+    url: string;
+    format: string;
+    width: number;
+    height: number;
+    created_at: string;
+    display_name: string;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectSettings {
   theme: 'light' | 'dark';
   textSize: number;
   textAlignment: 'center' | 'left' | 'right';
+  projectType?: 'vsl' | 'infographic';
   audio?: AudioSettings;
   selectedSlideIndex?: number;
+  infographicData?: InfographicData;
 }
 
 export interface DbSlide {
@@ -117,6 +136,18 @@ export interface VslProject {
   settings: ProjectSettings;
   created_at: string;
   updated_at: string;
+  infographic_prompt?: string;
+  infographic_images?: Array<{
+    asset_id: string;
+    public_id: string;
+    secure_url: string;
+    url: string;
+    format: string;
+    width: number;
+    height: number;
+    created_at: string;
+    display_name: string;
+  }>;
 }
 
 export interface Scene {

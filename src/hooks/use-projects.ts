@@ -84,9 +84,10 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload?: { id?: string; name?: string }) => {
+    mutationFn: async (payload?: { id?: string; name?: string; projectType?: 'vsl' | 'infographic' }) => {
       const name = payload?.name;
       const id = payload?.id;
+      const projectType = payload?.projectType || 'vsl';
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -100,7 +101,12 @@ export function useCreateProject() {
           user_id: user.id,
           name: name || 'Untitled Project',
           slides: [],
-          settings: { theme: 'dark', textSize: 72, textAlignment: 'center' },
+          settings: {
+            theme: 'dark',
+            textSize: 72,
+            textAlignment: 'center',
+            projectType,
+          },
         })
         .select()
         .single();

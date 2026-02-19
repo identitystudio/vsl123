@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { Zap, LogOut } from 'lucide-react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Zap, LogOut, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
 
 export function Header({ email }: HeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const supabase = createClient();
 
   const handleLogout = async () => {
@@ -19,14 +20,44 @@ export function Header({ email }: HeaderProps) {
     router.refresh();
   };
 
+  const isInfographicPage = pathname === '/infographics';
+  const isDashboard = pathname === '/dashboard';
+
   return (
     <header className="border-b border-gray-100 bg-white">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-lg">VSL Vibes</span>
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-lg">VSL Vibes</span>
+          </button>
+
+          {email && (
+            <nav className="flex items-center gap-1">
+              <Button
+                variant={isDashboard ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => router.push('/dashboard')}
+                className={isDashboard ? 'bg-black text-white hover:bg-gray-800' : 'text-gray-600 hover:text-black'}
+              >
+                Projects
+              </Button>
+              <Button
+                variant={isInfographicPage ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => router.push('/infographics')}
+                className={isInfographicPage ? 'bg-black text-white hover:bg-gray-800' : 'text-gray-600 hover:text-black'}
+              >
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                Infographics
+              </Button>
+            </nav>
+          )}
         </div>
 
         {email && (

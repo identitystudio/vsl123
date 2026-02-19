@@ -6,6 +6,13 @@ import { Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useProjects, useCreateProject, useDeleteProject } from '@/hooks/use-projects';
 import { useUpdateProject } from '@/hooks/use-project';
@@ -28,15 +35,29 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
   const [creatingProject, setCreatingProject] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
-  const handleNewProject = () => {
+  const handleNewProject = (projectType: 'vsl' | 'infographic') => {
+    if (creatingProject) return;
     setCreatingProject(true);
     const newId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    router.push(`/editor/${newId}?new=1`);
-    createProject.mutateAsync({ id: newId }).catch(() => {
-      toast.error('Failed to create project');
-      setCreatingProject(false);
-    });
+    
+    // Redirect based on project type
+    if (projectType === 'infographic') {
+      router.push(`/infographics/${newId}`);
+    } else {
+      router.push(`/editor/${newId}?new=1`);
+    }
+    
+    createProject
+      .mutateAsync({ id: newId, projectType })
+      .catch(() => {
+        toast.error('Failed to create project');
+        setCreatingProject(false);
+      })
+      .finally(() => {
+        setIsCreateDialogOpen(false);
+      });
   };
 
   const handleOpenProject = (projectId: string) => {
@@ -141,7 +162,7 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold">Your Projects</h1>
           <Button
-            onClick={handleNewProject}
+            onClick={() => setIsCreateDialogOpen(true)}
             className="bg-black text-white hover:bg-gray-800 gap-2"
             disabled={creatingProject}
           >
@@ -202,16 +223,36 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
                 )}
                 
                 <div className="flex items-center gap-2 mb-4 relative z-10">
-                  <span className="text-sm px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
-                    {project.slides?.length || 0} slides
-                  </span>
+                  {project.settings?.projectType === 'infographic' ? (
+                    <>
+                      <span className="text-sm px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-purple-600 font-medium">
+                        Infographic
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {project.infographic_images?.length || 0} images
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
+                        {project.slides?.length || 0} slides
+                      </span>
+                    </>
+                  )}
                   <span className="text-xs text-gray-400">
                     {format(new Date(project.updated_at), 'MMM d')}
                   </span>
                 </div>
 
                 <div className="mt-auto flex flex-col gap-2 relative z-10">
-                  {project.slides?.length > 0 ? (
+                  {project.settings?.projectType === 'infographic' ? (
+                    <Button
+                      onClick={() => router.push(`/infographics/${project.id}`)}
+                      className="w-full bg-black text-white hover:bg-gray-800 h-10 rounded-lg"
+                    >
+                      Edit Infographics
+                    </Button>
+                  ) : project.slides?.length > 0 ? (
                     <>
                       <Button
                         onClick={() => router.push(`/editor/${project.id}?step=2`)}
@@ -252,7 +293,7 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
           <div className="text-center py-20">
             <p className="text-gray-500 mb-4">No projects yet</p>
             <Button
-              onClick={handleNewProject}
+              onClick={() => setIsCreateDialogOpen(true)}
               className="bg-black text-white hover:bg-gray-800 gap-2"
               disabled={creatingProject}
             >
@@ -266,6 +307,47 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
           </div>
         ) : null}
       </main>
+
+      {/* Create Project Modal */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Choose project type</DialogTitle>
+            <DialogDescription>
+              Default uses the VSL script editor. Infographic is optimized for data visuals.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={() => handleNewProject('vsl')}
+              disabled={creatingProject}
+              className="w-full text-left rounded-lg border border-gray-200 p-4 hover:border-black/20 hover:bg-gray-50 transition-colors"
+            >
+              <div className="font-semibold text-gray-900">Default (VSL Script)</div>
+              <div className="text-sm text-gray-500">Start with the script, then design slides.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNewProject('infographic')}
+              disabled={creatingProject}
+              className="w-full text-left rounded-lg border border-gray-200 p-4 hover:border-black/20 hover:bg-gray-50 transition-colors"
+            >
+              <div className="font-semibold text-gray-900">Infographic</div>
+              <div className="text-sm text-gray-500">Focus on visuals and data-driven slides.</div>
+            </button>
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+                disabled={creatingProject}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
