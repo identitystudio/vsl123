@@ -197,51 +197,51 @@ export function EditorContent({ projectId }: EditorContentProps) {
 
       {/* Step Content */}
       <main className="flex-1 overflow-auto">
-        {currentStep === 1 && (
-          <ScriptInput
-            projectId={projectId}
-            initialScript={project.original_script || ''}
-            onSlidesGenerated={handleSlidesGenerated}
-          />
-        )}
-        {currentStep === 2 && (
-          <SlideReviewer
-            projectId={projectId}
-            slides={project.slides}
-            onComplete={() => {
-              setStep(3);
-              setAutoEdit(false);
-            }}
-            forceShowSlides={forceSlideView}
-            initialIndex={initialSlideIndex}
-            autoEdit={autoEdit}
-          />
-        )}
-        {currentStep === 3 && (
-          <AudioSetup
-            projectId={projectId}
-            slides={project.slides}
-            settings={project.settings}
-            onComplete={() => setStep(4)}
-            onSkip={handleSkipAudio}
-          />
-        )}
-        {currentStep === 4 && (
-          <PreviewExport
-            projectId={projectId}
-            projectName={project.name}
-            slides={exportSlides}
-            onSlideClick={(filteredIndex) => {
-              const targetSlide = exportSlides[filteredIndex];
-              const originalIndex = project.slides.findIndex((s) => s.id === targetSlide.id);
-              if (originalIndex !== -1) {
-                setInitialSlideIndex(originalIndex);
-                setAutoEdit(true);
-                setStep(2);
-              }
-            }}
-          />
-        )}
+          {currentStep === 1 && (
+            <ScriptInput
+              projectId={projectId}
+              initialScript={project.original_script || ''}
+              onSlidesGenerated={handleSlidesGenerated}
+            />
+          )}
+          {currentStep === 2 && (
+            <SlideReviewer
+              projectId={projectId}
+              slides={project.slides}
+              onComplete={() => {
+                setStep(3);
+                setAutoEdit(false);
+              }}
+              forceShowSlides={forceSlideView}
+              initialIndex={initialSlideIndex}
+              autoEdit={autoEdit}
+            />
+          )}
+          {currentStep === 3 && (
+            <AudioSetup
+              projectId={projectId}
+              slides={project.slides}
+              settings={project.settings}
+              onComplete={() => setStep(4)}
+              onSkip={handleSkipAudio}
+            />
+          )}
+          {currentStep === 4 && (
+            <PreviewExport
+              projectId={projectId}
+              projectName={project.name}
+              slides={exportSlides}
+              onSlideClick={(filteredIndex) => {
+                const targetSlide = exportSlides[filteredIndex];
+                const originalIndex = project.slides.findIndex((s) => s.id === targetSlide.id);
+                if (originalIndex !== -1) {
+                  setInitialSlideIndex(originalIndex);
+                  setAutoEdit(true);
+                  setStep(2);
+                }
+              }}
+            />
+          )}
       </main>
     </div>
   );

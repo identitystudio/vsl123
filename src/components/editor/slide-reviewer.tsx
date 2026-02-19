@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Check, Pencil, SkipForward } from 'lucide-react';
+import { ChevronLeft, Check, Pencil, SkipForward, Sparkles, X } from 'lucide-react';
 import { SlidePreview } from './slide-preview';
 import { SlideEditPanel } from './slide-edit-panel';
+import { InfographicsPanel } from './editor-sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUpdateSlides, useUpdateSingleSlide } from '@/hooks/use-project';
@@ -154,6 +155,7 @@ export function SlideReviewer({
   const updateSingleSlide = useUpdateSingleSlide();
   const updateSlides = useUpdateSlides();
   const HOLD_DURATION = 1000;
+  const [showInfographics, setShowInfographics] = useState(false);
 
   // Use a ref for slides to avoid stale closures in hold animation
   const slidesRef = useRef(slides);
@@ -494,7 +496,7 @@ export function SlideReviewer({
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className={editing && showInfographics ? 'max-w-6xl mx-auto px-4 py-8' : 'max-w-4xl mx-auto px-4 py-8'}>
       {/* Slide counter */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-gray-500">
@@ -582,69 +584,134 @@ export function SlideReviewer({
         </div>
       )}
 
-      {/* Edit panel */}
-      {editing && editSlide && (
-        <div className="mb-8">
-          <SlideEditPanel
-            slide={editSlide}
-            onUpdate={setEditSlide}
-            onSave={handleEditSave}
-            onCancel={() => {
-              setEditing(false);
-              setEditSlide(null);
-            }}
-            onApplyToAll={handleApplyStyleToAll}
-            headshotInputRef={headshotInputRef}
-            allSlides={slides}
-            currentIndex={currentIndex}
-            onJumpToSlide={(index) => {
-              // If currently editing, we can either save or just jump
-              // For better UX, let's "Save and Jump"
-              if (editSlide) {
-                const slideToSave = { ...editSlide, reviewed: true };
-                const updated = [...slides];
-                updated[currentIndex] = slideToSave;
-                setSlides(updated);
-                saveSingleSlide(slideToSave);
-              }
-              setCurrentIndex(index);
-              setEditing(true);
-              setEditSlide({ ...slides[index] });
-            }}
-          />
+      {/* Navigation — always visible */}
+      {!editing && (
+        <div className="flex items-center justify-between">
+          <button
+            onClick={handlePrevious}
+            disabled={currentIndex === 0}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">Skip to:</span>
+            <Input
+              value={skipToValue}
+              onChange={(e) => setSkipToValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSkipTo()}
+              className="w-16 h-8 text-center text-sm"
+              placeholder={String(currentIndex + 1)}
+            />
+          </div>
+
+          <button
+            onClick={handleSkip}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-black"
+          >
+            Skip
+            <SkipForward className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={handlePrevious}
-          disabled={currentIndex === 0}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Previous
-        </button>
-
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">Skip to:</span>
-          <Input
-            value={skipToValue}
-            onChange={(e) => setSkipToValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSkipTo()}
-            className="w-16 h-8 text-center text-sm"
-            placeholder={String(currentIndex + 1)}
+      {/* Edit panel + Infographics floating panel */}
+      {editing && editSlide && (
+        <div className="flex gap-4 mb-8 items-start">
+          {/* Infographics Panel — floats to the left */}
+          <InfographicsPanel
+            projectId={projectId}
+            open={showInfographics}
+            onClose={() => setShowInfographics(false)}
+            onApplyToSlide={(imageUrl) => {
+              if (editSlide) {
+                setEditSlide({
+                  ...editSlide,
+                  hasBackgroundImage: true,
+                  backgroundImage: {
+                    url: imageUrl,
+                    opacity: 100,
+                    blur: 0,
+                    displayMode: 'crisp',
+                  },
+                  style: {
+                    ...editSlide.style,
+                    background: 'image',
+                  },
+                });
+                toast.success('Image applied to slide');
+              }
+            }}
+            onApplyVideoToSlide={(videoUrl) => {
+              if (editSlide) {
+                setEditSlide({
+                  ...editSlide,
+                  backgroundVideoUrl: videoUrl,
+                });
+                toast.success('Video applied to slide');
+              }
+            }}
           />
-        </div>
 
-        <button
-          onClick={handleSkip}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-black"
-        >
-          Skip
-          <SkipForward className="w-4 h-4" />
-        </button>
-      </div>
+          {/* Main Edit Panel */}
+          <div className="flex-1 min-w-0">
+            {/* Infographics toggle button */}
+            {!showInfographics && (
+              <button
+                onClick={() => setShowInfographics(true)}
+                className="mb-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 text-purple-700 text-xs font-medium hover:from-purple-100 hover:to-indigo-100 transition-all hover:shadow-sm cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Open Infographics
+              </button>
+            )}
+            <SlideEditPanel
+              slide={editSlide}
+              onUpdate={setEditSlide}
+              onSave={handleEditSave}
+              onCancel={() => {
+                setEditing(false);
+                setEditSlide(null);
+              }}
+              onApplyToAll={handleApplyStyleToAll}
+              headshotInputRef={headshotInputRef}
+              allSlides={slides}
+              currentIndex={currentIndex}
+              totalSlides={slides.length}
+              canGoPrevious={currentIndex > 0}
+              onPrevious={handlePrevious}
+              onSkip={handleSkip}
+              onSkipTo={(index) => {
+                if (editSlide) {
+                  const slideToSave = { ...editSlide, reviewed: true };
+                  const updated = [...slides];
+                  updated[currentIndex] = slideToSave;
+                  setSlides(updated);
+                  saveSingleSlide(slideToSave);
+                }
+                setCurrentIndex(index);
+                setEditing(true);
+                setEditSlide({ ...slides[index] });
+              }}
+              onJumpToSlide={(index) => {
+                if (editSlide) {
+                  const slideToSave = { ...editSlide, reviewed: true };
+                  const updated = [...slides];
+                  updated[currentIndex] = slideToSave;
+                  setSlides(updated);
+                  saveSingleSlide(slideToSave);
+                }
+                setCurrentIndex(index);
+                setEditing(true);
+                setEditSlide({ ...slides[index] });
+              }}
+            />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

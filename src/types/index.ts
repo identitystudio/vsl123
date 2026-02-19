@@ -56,9 +56,10 @@ export interface Slide {
   underlineStyles: Record<string, UnderlineStyle>;
   circleStyles: Record<string, CircleStyle>;
 
-  // Background image
+  // Background image / video
   hasBackgroundImage: boolean;
   backgroundImage?: BackgroundImage;
+  backgroundVideoUrl?: string;
 
   // Audio
   audioUrl?: string;

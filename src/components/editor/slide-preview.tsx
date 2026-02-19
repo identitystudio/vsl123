@@ -285,6 +285,30 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
         </div>
       )}
 
+      {/* Background video */}
+      {slide.backgroundVideoUrl && (
+        <>
+          <video
+            className="absolute inset-0 w-full h-full object-cover"
+            src={slide.backgroundVideoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+          {/* Readability overlay */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundColor:
+                slide.style.textColor === 'black'
+                  ? 'rgba(255,255,255,0.4)'
+                  : 'rgba(0,0,0,0.35)',
+            }}
+          />
+        </>
+      )}
+
       {/* Infographic icon */}
       {slide.style.icon && (
         <div

@@ -14,6 +14,8 @@ import {
   BarChart3,
   Check,
   Pencil,
+  ChevronLeft,
+  SkipForward,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,7 +50,12 @@ interface SlideEditPanelProps {
   headshotInputRef?: React.RefObject<HTMLInputElement | null>;
   allSlides?: Slide[];
   currentIndex?: number;
+  totalSlides?: number;
   onJumpToSlide?: (index: number) => void;
+  onPrevious?: () => void;
+  onSkip?: () => void;
+  onSkipTo?: (index: number) => void;
+  canGoPrevious?: boolean;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -242,7 +249,12 @@ export function SlideEditPanel({
   headshotInputRef,
   allSlides = [],
   currentIndex = 0,
+  totalSlides = 0,
   onJumpToSlide,
+  onPrevious,
+  onSkip,
+  onSkipTo,
+  canGoPrevious = false,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -723,6 +735,62 @@ export function SlideEditPanel({
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+      {/* Save/Cancel + Navigation — top of panel */}
+      <div className="space-y-3 pb-3 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-400">
+            &#x2318;+Enter to save &bull; Esc to cancel
+          </span>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onCancel} className="gap-1">
+              <X className="w-4 h-4" />
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveAndNext}
+              className="bg-black text-white hover:bg-gray-800 gap-1"
+            >
+              &#x2713; Save &amp; Next &rarr;
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={onPrevious}
+            disabled={!canGoPrevious}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">Skip to:</span>
+            <input
+              type="text"
+              className="w-16 h-8 text-center text-sm border border-gray-200 rounded-md"
+              placeholder={String((currentIndex ?? 0) + 1)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = parseInt((e.target as HTMLInputElement).value);
+                  if (!isNaN(val) && val >= 1 && val <= (totalSlides ?? 1)) {
+                    onSkipTo?.(val - 1);
+                    (e.target as HTMLInputElement).value = '';
+                  }
+                }
+              }}
+            />
+          </div>
+          <button
+            onClick={onSkip}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-black"
+          >
+            Skip
+            <SkipForward className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
       {/* Text Content */}
       <div>
         <div className="flex items-center gap-2 mb-3">
@@ -1479,25 +1547,7 @@ export function SlideEditPanel({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-        <span className="text-xs text-gray-400">
-          &#x2318;+Enter to save &bull; Esc to cancel
-        </span>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onCancel} className="gap-1">
-            <X className="w-4 h-4" />
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSaveAndNext}
-            className="bg-black text-white hover:bg-gray-800 gap-1"
-          >
-            &#x2713; Save &amp; Next &rarr;
-          </Button>
-        </div>
-      </div>
+
 
       {/* AI Image Generation Dialog */}
       <AiImageDialog
