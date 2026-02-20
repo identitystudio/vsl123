@@ -235,6 +235,8 @@ export function PreviewExport({
   const [hctiUserId, setHctiUserId] = useState('');
   const [hctiApiKey, setHctiApiKey] = useState('');
   const [json2videoApiKey, setJson2videoApiKey] = useState('');
+  const [shotstackApiKey, setShotstackApiKey] = useState('');
+  const [shotstackOwnerId, setShotstackOwnerId] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -243,15 +245,22 @@ export function PreviewExport({
     const savedUserId = localStorage.getItem('hcti_user_id');
     const savedApiKey = localStorage.getItem('hcti_api_key');
     const savedJson2videoKey = localStorage.getItem('json2video_api_key');
+    const savedShotstackKey = localStorage.getItem('shotstack_api_key');
+    const savedShotstackId = localStorage.getItem('shotstack_owner_id');
     if (savedUserId) setHctiUserId(savedUserId);
     if (savedApiKey) setHctiApiKey(savedApiKey);
     if (savedJson2videoKey) setJson2videoApiKey(savedJson2videoKey);
+    if (savedShotstackKey) setShotstackApiKey(savedShotstackKey);
+    if (savedShotstackId) setShotstackOwnerId(savedShotstackId);
   }, []);
 
   const handleSaveSettings = () => {
     localStorage.setItem('hcti_user_id', hctiUserId);
     localStorage.setItem('hcti_api_key', hctiApiKey);
+    localStorage.setItem('hcti_api_key', hctiApiKey);
     localStorage.setItem('json2video_api_key', json2videoApiKey);
+    localStorage.setItem('shotstack_api_key', shotstackApiKey);
+    localStorage.setItem('shotstack_owner_id', shotstackOwnerId);
     setShowSettings(false);
     toast.success('API credentials saved');
   };
@@ -678,11 +687,171 @@ export function PreviewExport({
     }
   };
 
-  const handleFFmpegExport = async () => {
+
+  const handleShotstackExport = async () => {
     if (exporting) return;
 
-    const userId = localStorage.getItem('hcti_user_id') || '980c1ea4-9361-4496-ba24-9246925be09f';
-    const apiKey = localStorage.getItem('hcti_api_key') || 'caa50ed6-9f01-4e12-8c57-28ce7cd51d14';
+    setExporting(true);
+    setExportProgress(0);
+
+    try {
+      toast.info('Rendering slides locally...');
+      
+      // Step 1: Render all slides locally and collect HTML
+      const slideData: any[] = [];
+      
+      for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+        
+        // Render Slide to Image
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
+        const container = document.createElement('div');
+        container.style.cssText = 'width: 1920px; height: 1080px;';
+        wrapper.appendChild(container);
+        document.body.appendChild(wrapper);
+
+        const React = await import('react');
+        const ReactDOM = await import('react-dom/client');
+        const root = ReactDOM.createRoot(container);
+        
+        await new Promise<void>((resolve) => {
+          root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+          setTimeout(resolve, 2000);
+        });
+
+        const renderedElement = container.firstElementChild as HTMLElement;
+        if (!renderedElement) throw new Error(`Failed to render slide ${i + 1}`);
+
+        const slideHtml = renderedElement.outerHTML;
+
+        // Calculate duration from audio
+        let duration = 3; // Default duration
+        if (slide.audioUrl) {
+          try {
+            const audio = new Audio(slide.audioUrl);
+            await new Promise((resolve) => {
+              audio.onloadedmetadata = () => {
+                if (audio.duration && isFinite(audio.duration)) {
+                  duration = audio.duration;
+                }
+                resolve(true);
+              };
+              audio.onerror = () => resolve(false);
+              audio.src = slide.audioUrl!;
+            });
+          } catch (e) {
+            console.warn('Could not get audio duration', e);
+          }
+        }
+
+        slideData.push({
+          html: slideHtml,
+          audioUrl: slide.audioUrl,
+          duration,
+        });
+
+        root.unmount();
+        document.body.removeChild(wrapper);
+        
+        setExportProgress(Math.round(((i + 1) / slides.length) * 30));
+      }
+
+      setExportProgress(30);
+      toast.info('Sending to backend for processing...');
+
+      // Step 2: Send to backend API for rendering and Shotstack submission
+      const response = await fetch('/api/shotstack-export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          htmlContent: slideData,
+          slides: slideData,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Backend processing failed');
+      }
+
+      const result = await response.json();
+      
+      if (!result.success || !result.renderId) {
+        throw new Error(result.error || 'Failed to create Shotstack render job');
+      }
+
+      const renderId = result.renderId;
+      console.log('Shotstack Render ID:', renderId);
+
+      setExportProgress(50);
+      toast.info('Sending to Shotstack for rendering...');
+
+      // Step 3: Poll for completion using backend status endpoint
+      let videoUrl: string | null = null;
+      let attempts = 0;
+      const maxAttempts = 120; // 6 minutes with 3-second intervals
+      let lastStatus = '';
+
+      while (!videoUrl && attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        attempts++;
+
+        const statusResponse = await fetch(`/api/shotstack-export/${renderId}`);
+
+        if (!statusResponse.ok) {
+          const errorData = await statusResponse.json();
+          if (errorData.status === 'failed') {
+            throw new Error(`Shotstack render failed: ${errorData.error}`);
+          }
+          throw new Error(errorData.error || 'Failed to check render status');
+        }
+
+        const statusData = await statusResponse.json();
+        const status = statusData.status;
+        if (status !== lastStatus) {
+          console.log('Shotstack Status:', status);
+          lastStatus = status;
+        }
+
+        if (status === 'done') {
+          videoUrl = statusData.url;
+        } else if (status === 'failed') {
+          throw new Error(`Shotstack render failed: ${statusData.error}`);
+        }
+
+        setExportProgress(50 + Math.min(45, (attempts / maxAttempts) * 45));
+      }
+
+      if (!videoUrl) {
+        throw new Error('Render timed out after 6 minutes. Try again later.');
+      }
+
+      // Step 4: Download the video
+      setExportProgress(100);
+      toast.success('Video Ready! Downloading...');
+
+      const link = document.createElement('a');
+      link.href = videoUrl;
+      link.download = `${projectName.replace(/\s+/g, '_')}_Shotstack.mp4`;
+      link.click();
+
+      toast.success('Download started!');
+    } catch (error) {
+      console.error('Shotstack export error:', error);
+      const message =
+        error instanceof Error ? error.message : 'Shotstack export failed. Please try again.';
+      toast.error(message);
+    } finally {
+      setExporting(false);
+      setExportProgress(0);
+    }
+  };
+
+  const handleFFmpegExport = async () => {
+    if (exporting) return;
 
     setExporting(true);
     setExportProgress(0);
@@ -701,7 +870,7 @@ export function PreviewExport({
       });
 
       setExportProgress(10);
-      toast.info('Rendering slides...');
+      toast.info('Rendering slides using backend service...');
 
       const slideImages: Blob[] = [];
       const slideAudios: (Blob | null)[] = [];
@@ -726,26 +895,33 @@ export function PreviewExport({
         });
 
         const renderedElement = container.firstElementChild as HTMLElement;
-        if (!renderedElement) throw new Error('Failed to render slide');
+        if (!renderedElement) throw new Error(`Failed to render slide ${i + 1}`);
 
         const slideHtml = renderedElement.outerHTML;
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0;}body{width:1920px;height:1080px;overflow:hidden;}</style></head><body>${slideHtml}</body></html>`;
 
-        // Add small delay to avoid rate limiting
-        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        // Add small delay to avoid overwhelming the backend
+        if (i > 0) await new Promise(r => setTimeout(r, 300));
         
-        const response = await fetchWithRetry('https://hcti.io/v1/image', {
+        const response = await fetch('/api/html-to-image', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Basic ' + btoa(`${userId}:${apiKey}`),
           },
-          body: JSON.stringify({ html, viewport_width: 1920, viewport_height: 1080 }),
+          body: JSON.stringify({ html }),
         });
 
-        if (!response.ok) throw new Error('Failed to render slide image');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Failed to render slide ${i + 1}`);
+        }
+
         const result = await response.json();
         
+        if (!result.success || !result.url) {
+          throw new Error(result.error || `Failed to get image URL for slide ${i + 1}`);
+        }
+
         const imgResponse = await fetch(result.url);
         const imgBlob = await imgResponse.blob();
         slideImages.push(imgBlob);
@@ -1176,6 +1352,26 @@ export function PreviewExport({
                         </a>
                       </p>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Shotstack API Key</label>
+                      <input
+                        type="password"
+                        value={shotstackApiKey}
+                        onChange={(e) => setShotstackApiKey(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="Enter your Shotstack API Key"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Shotstack Owner ID</label>
+                      <input
+                        type="text"
+                        value={shotstackOwnerId}
+                        onChange={(e) => setShotstackOwnerId(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="Enter your Shotstack Owner ID"
+                      />
+                    </div>
                   </div>
                   <div className="flex gap-2 justify-end">
                     <Button variant="outline" onClick={() => setShowSettings(false)}>
@@ -1204,6 +1400,40 @@ export function PreviewExport({
 
                     for (let i = 0; i < slides.length; i++) {
                       const slide = slides[i];
+                      
+                      // Upload background video to Cloudinary if it exists
+                      let cloudinaryVideoUrl = slide.backgroundVideoUrl;
+                      if (slide.backgroundVideoUrl) {
+                        try {
+                          toast.info(`Uploading background video ${i + 1}/${slides.length} to Cloudinary...`);
+                          const videoResponse = await fetch(slide.backgroundVideoUrl);
+                          const videoBlob = await videoResponse.blob();
+                          
+                          const formData = new FormData();
+                          formData.append('file', videoBlob);
+                          formData.append('fileName', `slide_${i}_bg_video`);
+
+                          const uploadRes = await fetch('/api/upload-to-cloudinary', {
+                            method: 'POST',
+                            body: formData,
+                          });
+
+                          if (!uploadRes.ok) {
+                            console.error('Failed to upload background video to Cloudinary');
+                            // Keep original URL if upload fails
+                          } else {
+                            const uploadData = await uploadRes.json();
+                            if (uploadData.success && uploadData.url) {
+                              cloudinaryVideoUrl = uploadData.url;
+                              console.log('✅ Background video uploaded to Cloudinary:', cloudinaryVideoUrl);
+                            }
+                          }
+                        } catch (err) {
+                          console.warn('Could not upload background video to Cloudinary:', err);
+                          // Continue with original URL if upload fails
+                        }
+                      }
+                      
                       const wrapper = document.createElement('div');
                       wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
                       const container = document.createElement('div');
@@ -1212,24 +1442,34 @@ export function PreviewExport({
                       document.body.appendChild(wrapper);
                       const root = ReactDOM.createRoot(container);
                       await new Promise<void>((resolve) => {
-                        root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                      const renderSlide = { ...slide, backgroundVideoUrl: undefined };
+                      root.render(React.createElement(SlidePreview, { slide: renderSlide, scale: 3 }));
                         setTimeout(resolve, 100); 
                       });
                       const renderedElement = container.firstElementChild as HTMLElement;
                       if (!renderedElement) throw new Error('Failed to render slide locally');
-                      slidesWithHtml.push({
-                        audioUrl: slide.audioUrl,
-                        htmlContent: renderedElement.outerHTML
-                      });
+                        slidesWithHtml.push({
+                          audioUrl: slide.audioUrl,
+                          backgroundVideoUrl: cloudinaryVideoUrl, // Use Cloudinary URL instead
+                          backgroundImage: slide.backgroundImage,       // Image support
+                          htmlContent: renderedElement.outerHTML
+                        });
                       root.unmount();
                       document.body.removeChild(wrapper);
                     }
 
                     toast.info('Sending project to VPS...');
+                    
+                    const payload = { slides: slidesWithHtml, projectName };
+                    console.log('🚀 VPS Payload with Cloudinary URLs:', JSON.stringify(payload, (key, value) => {
+                      if (key === 'htmlContent') return value.substring(0, 50) + '...'; // Truncate HTML for readability
+                      return value;
+                    }, 2));
+
                     const startRes = await fetch(`/api/vps-render?mode=render`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ slides: slidesWithHtml, projectName }),
+                      body: JSON.stringify(payload),
                     });
 
                     if (!startRes.ok) throw new Error(await startRes.text());
@@ -1270,6 +1510,15 @@ export function PreviewExport({
               </Button>
               
               <Button
+                onClick={handleShotstackExport}
+                size="lg"
+                className="bg-indigo-600 text-white hover:bg-indigo-700 gap-2 text-lg px-8 py-6 w-full shadow-lg shadow-indigo-500/20"
+              >
+                <Download className="w-5 h-5" />
+                Export Video (Shotstack)
+              </Button>
+
+              <Button
                 onClick={async () => {
                   if (exporting) return;
                   setExporting(true);
@@ -1283,6 +1532,40 @@ export function PreviewExport({
 
                     for (let i = 0; i < slides.length; i++) {
                       const slide = slides[i];
+                      
+                      // Upload background video to Cloudinary if it exists
+                      let cloudinaryVideoUrl = slide.backgroundVideoUrl;
+                      if (slide.backgroundVideoUrl) {
+                        try {
+                          toast.info(`Uploading background video ${i + 1}/${slides.length} to Cloudinary...`);
+                          const videoResponse = await fetch(slide.backgroundVideoUrl);
+                          const videoBlob = await videoResponse.blob();
+                          
+                          const formData = new FormData();
+                          formData.append('file', videoBlob);
+                          formData.append('fileName', `slide_${i}_bg_video`);
+
+                          const uploadRes = await fetch('/api/upload-to-cloudinary', {
+                            method: 'POST',
+                            body: formData,
+                          });
+
+                          if (!uploadRes.ok) {
+                            console.error('Failed to upload background video to Cloudinary');
+                            // Keep original URL if upload fails
+                          } else {
+                            const uploadData = await uploadRes.json();
+                            if (uploadData.success && uploadData.url) {
+                              cloudinaryVideoUrl = uploadData.url;
+                              console.log('✅ Background video uploaded to Cloudinary:', cloudinaryVideoUrl);
+                            }
+                          }
+                        } catch (err) {
+                          console.warn('Could not upload background video to Cloudinary:', err);
+                          // Continue with original URL if upload fails
+                        }
+                      }
+                      
                       const wrapper = document.createElement('div');
                       wrapper.style.cssText = 'position: fixed; left: -9999px; top: 0;';
                       const container = document.createElement('div');
@@ -1291,15 +1574,19 @@ export function PreviewExport({
                       document.body.appendChild(wrapper);
                       const root = ReactDOM.createRoot(container);
                       await new Promise<void>((resolve) => {
-                        root.render(React.createElement(SlidePreview, { slide, scale: 3 }));
+                        const renderSlide = { ...slide, backgroundVideoUrl: undefined };
+                        root.render(React.createElement(SlidePreview, { slide: renderSlide, scale: 3 }));
                         setTimeout(resolve, 100); 
                       });
                       const renderedElement = container.firstElementChild as HTMLElement;
                       if (!renderedElement) throw new Error('Failed to render slide locally');
-                      slidesWithHtml.push({
-                        audioUrl: slide.audioUrl,
-                        htmlContent: renderedElement.outerHTML
-                      });
+                        slidesWithHtml.push({
+                          audioUrl: slide.audioUrl,
+                          backgroundVideoUrl: cloudinaryVideoUrl, // Use Cloudinary URL instead
+                          backgroundImage: slide.backgroundImage,       // Image support
+
+                          htmlContent: renderedElement.outerHTML
+                        });
                       root.unmount();
                       document.body.removeChild(wrapper);
                     }

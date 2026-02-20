@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Sparkles,
   Loader2,
@@ -35,9 +35,21 @@ interface InfographicsPanelProps {
   onClose: () => void;
   onApplyToSlide?: (imageUrl: string) => void;
   onApplyVideoToSlide?: (videoUrl: string) => void;
+  savedImages?: InfographicImage[];
+  savedPrompt?: string;
+  savedVideos?: Record<string, { uri: string; data?: string }>;
 }
 
-export function InfographicsPanel({ projectId, open, onClose, onApplyToSlide, onApplyVideoToSlide }: InfographicsPanelProps) {
+export function InfographicsPanel({
+  projectId,
+  open,
+  onClose,
+  onApplyToSlide,
+  onApplyVideoToSlide,
+  savedImages,
+  savedPrompt,
+  savedVideos,
+}: InfographicsPanelProps) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<InfographicImage[]>([]);
@@ -48,6 +60,23 @@ export function InfographicsPanel({ projectId, open, onClose, onApplyToSlide, on
   const [generatingVideos, setGeneratingVideos] = useState<Record<string, boolean>>({});
   const [generatedVideos, setGeneratedVideos] = useState<Record<string, { uri: string; data?: string }>>({});
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  const [hasLoadedSaved, setHasLoadedSaved] = useState(false);
+
+  // Load saved data on mount
+  useEffect(() => {
+    if (!hasLoadedSaved) {
+      if (savedImages && savedImages.length > 0) {
+        setImages(savedImages);
+      }
+      if (savedPrompt) {
+        setPrompt(savedPrompt);
+      }
+      if (savedVideos && Object.keys(savedVideos).length > 0) {
+        setGeneratedVideos(savedVideos);
+      }
+      setHasLoadedSaved(true);
+    }
+  }, [savedImages, savedPrompt, savedVideos, hasLoadedSaved]);
 
   if (!open) return null;
 
@@ -61,7 +90,8 @@ export function InfographicsPanel({ projectId, open, onClose, onApplyToSlide, on
     setError(null);
 
     try {
-      const response = await fetch('/api/generate-infographics', {
+      // Use n8n Webhook for generation
+      const response = await fetch('https://themacularprogram.app.n8n.cloud/webhook/generate-infographics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: prompt.trim() }),
@@ -93,13 +123,18 @@ export function InfographicsPanel({ projectId, open, onClose, onApplyToSlide, on
     }
   };
 
-  const saveInfographics = async (promptText: string, imageArray: InfographicImage[]) => {
+  const saveInfographics = async (promptText: string, imageArray: InfographicImage[], videos?: Record<string, { uri: string; data?: string }>) => {
     setSaving(true);
     try {
       const response = await fetch('/api/save-infographics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, prompt: promptText, images: imageArray }),
+        body: JSON.stringify({
+          projectId,
+          prompt: promptText,
+          images: imageArray,
+          videos: videos || generatedVideos,
+        }),
       });
 
       if (!response.ok) {
@@ -144,11 +179,17 @@ export function InfographicsPanel({ projectId, open, onClose, onApplyToSlide, on
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to generate video');
 
-      setGeneratedVideos((prev) => ({
-        ...prev,
+      const newVideos = {
+        ...generatedVideos,
         [image.asset_id]: { uri: data.videoUri, data: data.videoData },
-      }));
+      };
+      setGeneratedVideos(newVideos);
       toast.success('Video generated!');
+
+      // Save videos to DB so they persist on refresh
+      if (projectId && images.length > 0) {
+        await saveInfographics(prompt.trim() || 'infographic', images, newVideos);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate video';
       toast.error(message);

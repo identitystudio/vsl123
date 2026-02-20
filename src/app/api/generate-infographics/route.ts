@@ -9,6 +9,8 @@ export async function POST(req: Request) {
       );
     }
 
+    console.log('🚀 API: Received prompt for webhook:', prompt);
+
     const response = await fetch(
       'https://themacularprogram.app.n8n.cloud/webhook/generate-infographics',
       {
@@ -20,11 +22,16 @@ export async function POST(req: Request) {
       }
     );
 
+    console.log('📡 Webhook Status:', response.status);
+
     if (!response.ok) {
-      throw new Error(`Webhook returned ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ Webhook Failed:', errorText);
+      throw new Error(`Webhook returned ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('✅ Webhook Response:', JSON.stringify(data).substring(0, 100) + '...');
     return Response.json(data);
   } catch (error) {
     console.error('Generate infographics error:', error);

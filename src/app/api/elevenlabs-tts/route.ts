@@ -12,6 +12,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Debug logging
+    console.log(`🎤 ElevenLabs Request: Voice=${voiceId}, Model=eleven_multilingual_v2`);
+    
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
@@ -22,11 +25,12 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_multilingual_v2',
           voice_settings: {
             stability: stability || 0.5,
             similarity_boost: similarityBoost || 0.75,
-            speed: speed || 1.0,
+            style: 0.0,
+            use_speaker_boost: true
           },
         }),
       }
@@ -34,8 +38,11 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`❌ ElevenLabs API Error (${response.status}):`, errorText);
       throw new Error(`ElevenLabs error: ${response.status} ${errorText}`);
     }
+
+    console.log('✅ ElevenLabs generation successful');
 
     const audioBuffer = await response.arrayBuffer();
     const base64 = Buffer.from(audioBuffer).toString('base64');
@@ -50,7 +57,7 @@ export async function POST(request: NextRequest) {
       duration: estimatedDuration,
     });
   } catch (error: unknown) {
-    console.error('ElevenLabs TTS error:', error);
+    console.error('ElevenLabs TTS route error (catch block):', error);
     const message =
       error instanceof Error ? error.message : 'Failed to generate audio';
     return NextResponse.json({ error: message }, { status: 500 });

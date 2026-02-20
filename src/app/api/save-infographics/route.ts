@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   try {
-    const { projectId, prompt, images } = await req.json();
+    const { projectId, prompt, images, videos } = await req.json();
 
     if (!projectId || !prompt || !images) {
       console.warn('Missing required fields:', { projectId: !!projectId, prompt: !!prompt, images: !!images });
@@ -14,14 +14,20 @@ export async function POST(req: Request) {
 
     const supabase = await createClient();
 
+    // Build update payload
+    const updatePayload: Record<string, any> = {
+      infographic_prompt: prompt,
+      infographic_images: images,
+      updated_at: new Date().toISOString(),
+    };
+    if (videos) {
+      updatePayload.infographic_videos = videos;
+    }
+
     // Update project with infographic data
     const { data, error } = await supabase
       .from('vsl_projects')
-      .update({
-        infographic_prompt: prompt,
-        infographic_images: images,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', projectId)
       .select()
       .single();

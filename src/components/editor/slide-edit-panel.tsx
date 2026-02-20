@@ -1005,7 +1005,55 @@ export function SlideEditPanel({
             </Select>
           </div>
         </div>
+
       </div>
+
+      {/* Emotional Context */}
+      {(slide.emotionalBeat || slide.visualPrompt) && (
+        <div className="space-y-3 pt-4 border-t border-gray-100">
+           <div className="flex items-center gap-2 mb-2">
+             <span className="text-lg">❤️</span>
+             <span className="font-semibold text-sm">Emotional Context</span>
+           </div>
+           
+           <div className="bg-purple-50 rounded-lg p-3 space-y-2 border border-purple-100">
+             {slide.emotionalBeat && (
+                <div className="flex justify-between items-center mb-1">
+                   <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
+                     {slide.emotionalBeat}
+                   </span>
+                   {slide.emotion && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-white rounded-full border border-purple-200 text-purple-600 font-medium">
+                        {slide.emotion}
+                      </span>
+                   )}
+                </div>
+             )}
+             
+             {slide.visualPrompt && (
+               <div className="pt-1">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Visual Prompt</span>
+                  </div>
+                  <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
+                    "{slide.visualPrompt}"
+                  </p>
+               </div>
+             )}
+
+             {slide.videoPrompt && (
+               <div className="pt-1">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Video Prompt</span>
+                  </div>
+                  <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
+                    "{slide.videoPrompt}"
+                  </p>
+               </div>
+             )}
+           </div>
+        </div>
+      )}
 
       {/* Background Image Controls */}
       {slide.hasBackgroundImage && (

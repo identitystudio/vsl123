@@ -66,8 +66,23 @@ export async function POST(req: Request) {
       throw new Error("Video generation timeout after 5 minutes");
     }
 
+    // Log the full response for debugging
+    console.log("Operation response:", JSON.stringify(operation, null, 2));
+
+    // Check for errors in the response
+    if ((operation as any).error) {
+      const err = (operation as any).error;
+      throw new Error(`Video generation failed: ${err.message || JSON.stringify(err)}`);
+    }
+
+    // Check for content safety filtering
+    const raiReasons = operation.response?.raiMediaFilteredReasons;
+    if (raiReasons && raiReasons.length > 0) {
+      throw new Error(raiReasons[0]);
+    }
+
     if (!operation.response?.generatedVideos?.[0]?.video?.uri) {
-      throw new Error("No video generated");
+      throw new Error("No video generated — the API returned an empty result.");
     }
 
     const videoUri = operation.response.generatedVideos[0].video.uri;

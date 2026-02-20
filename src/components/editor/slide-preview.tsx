@@ -174,7 +174,9 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
       ? '#1a1a1a'
       : slide.style.background === 'gradient'
         ? undefined
-        : '#ffffff';
+        : slide.style.background === 'video'
+          ? 'transparent'
+          : '#ffffff';
 
   const textColor =
     slide.style.textColor === 'white'

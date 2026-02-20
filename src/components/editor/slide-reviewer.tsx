@@ -7,7 +7,7 @@ import { SlideEditPanel } from './slide-edit-panel';
 import { InfographicsPanel } from './editor-sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useUpdateSlides, useUpdateSingleSlide } from '@/hooks/use-project';
+import { useUpdateSingleSlide } from '@/hooks/use-project';
 import type { Slide, UnderlineStyle, CircleStyle } from '@/types';
 import { toast } from 'sonner';
 
@@ -18,6 +18,9 @@ interface SlideReviewerProps {
   forceShowSlides?: boolean;
   initialIndex?: number;
   autoEdit?: boolean;
+  savedInfographicImages?: any[];
+  savedInfographicPrompt?: string;
+  savedInfographicVideos?: Record<string, { uri: string; data?: string }>;
 }
 
 const UNDERLINE_CYCLE: UnderlineStyle[] = [
@@ -140,6 +143,9 @@ export function SlideReviewer({
   forceShowSlides,
   initialIndex = 0,
   autoEdit = false,
+  savedInfographicImages,
+  savedInfographicPrompt,
+  savedInfographicVideos,
 }: SlideReviewerProps) {
   const [slides, setSlides] = useState<Slide[]>(initialSlides);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -153,7 +159,6 @@ export function SlideReviewer({
   const headshotInputRef = useRef<HTMLInputElement>(null);
   const bgImageInputRef = useRef<HTMLInputElement>(null);
   const updateSingleSlide = useUpdateSingleSlide();
-  const updateSlides = useUpdateSlides();
   const HOLD_DURATION = 1000;
   const [showInfographics, setShowInfographics] = useState(false);
 
@@ -167,6 +172,11 @@ export function SlideReviewer({
   useEffect(() => {
     setSlides(initialSlides);
   }, [initialSlides]);
+
+  // Sync current index when navigating from emotional beats sidebar
+  useEffect(() => {
+    setCurrentIndex(initialIndex);
+  }, [initialIndex]);
 
   // Auto-open editing if jumped to a slide
   useEffect(() => {
@@ -195,19 +205,25 @@ export function SlideReviewer({
     [updateSingleSlide]
   );
 
-  // Bulk save (for apply to all)
+  // Bulk save (for apply to all) - use individual slide updates to preserve audio data
   const saveBulkSlides = useCallback(
     async (updatedSlides: Slide[]) => {
       try {
-        await updateSlides.mutateAsync({
-          projectId,
-          slides: updatedSlides,
-        });
+        // Use parallel updateSingleSlide for each slide instead of delete-all-then-insert
+        // This prevents accidental data loss of audio/other fields
+        await Promise.all(
+          updatedSlides.map((slide) =>
+            updateSingleSlide.mutateAsync({
+              slideId: slide.id,
+              updates: slide,
+            })
+          )
+        );
       } catch {
         toast.error('Failed to save slides');
       }
     },
-    [projectId, updateSlides]
+    [updateSingleSlide]
   );
 
   const longPressTriggeredRef = useRef(false);
@@ -443,7 +459,8 @@ export function SlideReviewer({
     // 2. Update UI IMMEDIATELY to trigger the completion screen
     setSlides(finalSlides);
     setHoldProgress(0);
-    setViewingSlidesAnyway(false); 
+    setViewingSlidesAnyway(false);
+    setForceViewActive(false);
 
     // 3. Sync with DB in the background
     saveBulkSlides(finalSlides);
@@ -455,9 +472,17 @@ export function SlideReviewer({
 
   const [showCompletionForce, setShowCompletionForce] = useState(false);
   const [viewingSlidesAnyway, setViewingSlidesAnyway] = useState(false);
+  const [forceViewActive, setForceViewActive] = useState(!!forceShowSlides);
+
+  // Sync forceShowSlides prop into local state
+  useEffect(() => {
+    if (forceShowSlides) {
+      setForceViewActive(true);
+    }
+  }, [forceShowSlides]);
 
   // All slides reviewed screen
-  if ((allReviewed || currentIndex >= slides.length) && !editing && !viewingSlidesAnyway && !forceShowSlides) {
+  if ((allReviewed || currentIndex >= slides.length) && !editing && !viewingSlidesAnyway && !forceViewActive) {
     const manualCount = slides.filter((s) => s.reviewed).length;
     const aiCount = 0; // Will be populated when AI styling is implemented
 
@@ -625,6 +650,9 @@ export function SlideReviewer({
             projectId={projectId}
             open={showInfographics}
             onClose={() => setShowInfographics(false)}
+            savedImages={savedInfographicImages}
+            savedPrompt={savedInfographicPrompt}
+            savedVideos={savedInfographicVideos}
             onApplyToSlide={(imageUrl) => {
               if (editSlide) {
                 setEditSlide({

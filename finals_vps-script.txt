@@ -1,0 +1,233 @@
+const express = require('express');
+const puppeteer = require('puppeteer');
+const fs = require('fs-extra');
+const path = require('path');
+const { exec } = require('child_process');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json({ limit: '900mb' }));
+app.use(cors());
+
+const PORT = 3001;
+const jobs = new Map();
+
+app.use('/outputs', express.static(path.join(__dirname, 'outputs')));
+fs.ensureDirSync(path.join(__dirname, 'outputs'));
+fs.ensureDirSync(path.join(__dirname, 'temp'));
+
+// -------------------------
+// UTILITIES
+// -------------------------
+
+const runCmd = (cmd) => new Promise((resolve, reject) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr || error.message));
+        else resolve(stdout);
+    });
+});
+
+const getAudioDuration = async (file) => {
+    const out = await runCmd(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${file}"`
+    );
+    return parseFloat(out.trim());
+};
+
+// -------------------------
+// RENDER SLIDES + AUDIO
+// -------------------------
+
+async function renderSlides(slides, framesDir, audioDir, updateJob) {
+    const AUDIO_CONCURRENCY = 12;
+    const TAB_CONCURRENCY = 4;
+
+    updateJob({ status: 'downloading_audio', progress: 5 });
+
+    // AUDIO DOWNLOAD (MP3 ONLY)
+    for (let i = 0; i < slides.length; i += AUDIO_CONCURRENCY) {
+        const batch = slides.slice(i, i + AUDIO_CONCURRENCY);
+        await Promise.all(batch.map(async (slide, idx) => {
+            if (!slide.audioUrl) return;
+            const id = i + idx;
+            const dest = path.join(audioDir, `audio_${String(id).padStart(3, '0')}.mp3`);
+
+            try {
+                if (slide.audioUrl.startsWith('data:')) {
+                    await fs.writeFile(dest, slide.audioUrl.split(',')[1], 'base64');
+                } else {
+                    await runCmd(`curl -s -L -o "${dest}" "${slide.audioUrl}"`);
+                }
+            } catch (e) {
+                console.error(`Audio ${id} failed:`, e.message);
+            }
+        }));
+    }
+
+    updateJob({ status: 'rendering_slides', progress: 15 });
+
+    const BROWSER_BATCH = 20;
+
+    for (let i = 0; i < slides.length; i += BROWSER_BATCH) {
+        const chunk = slides.slice(i, i + BROWSER_BATCH);
+
+        const browser = await puppeteer.launch({
+            protocolTimeout: 300000,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--window-size=1920,1080'
+            ]
+        });
+
+        try {
+            for (let j = 0; j < chunk.length; j += TAB_CONCURRENCY) {
+                const tabs = chunk.slice(j, j + TAB_CONCURRENCY);
+
+                await Promise.all(tabs.map(async (slide, tIdx) => {
+                    const globalIdx = i + j + tIdx;
+                    const id = String(globalIdx).padStart(3, '0');
+                    const filePath = path.join(framesDir, `slide_${id}.png`);
+
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        const page = await browser.newPage();
+                        try {
+                            await page.setViewport({ width: 1920, height: 1080 });
+
+                            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>body{margin:0;padding:0;overflow:hidden;background:black;}</style></head><body>${slide.htmlContent}</body></html>`;
+
+                            await page.setContent(html, { waitUntil: 'networkidle0', timeout: 45000 });
+                            await new Promise(r => setTimeout(r, 400));
+
+                            await page.screenshot({ path: filePath, timeout: 30000 });
+
+                            if (await fs.pathExists(filePath)) break;
+                        } catch (e) {
+                            if (attempt === 3) throw e;
+                        } finally {
+                            await page.close();
+                        }
+                    }
+                }));
+
+                updateJob({ progress: 15 + Math.floor(((i + j) / slides.length) * 55) });
+            }
+        } finally {
+            await browser.close();
+        }
+    }
+}
+
+// -------------------------
+// MAIN ROUTE
+// -------------------------
+
+app.post(['/render', '/render-zip'], async (req, res) => {
+    const isZip = req.path.includes('zip');
+    const { slides, projectName } = req.body;
+
+    const jobId = `job_${Date.now()}`;
+    res.json({ jobId });
+
+    const updateJob = (upd) => jobs.set(jobId, { ...jobs.get(jobId), ...upd });
+    updateJob({ status: 'starting', progress: 0 });
+
+    const workDir = path.join(__dirname, 'temp', jobId);
+
+    try {
+        const framesDir = path.join(workDir, 'frames');
+        const audioDir = path.join(workDir, 'audio');
+        const segDir = path.join(workDir, 'segments');
+
+        await Promise.all([
+            fs.ensureDir(framesDir),
+            fs.ensureDir(audioDir),
+            fs.ensureDir(segDir)
+        ]);
+
+        await renderSlides(slides, framesDir, audioDir, updateJob);
+
+        const safeProjectName = (projectName || 'export')
+            .replace(/[^\w\s]/gi, '')
+            .replace(/\s+/g, '_');
+
+        const finalFilename = `${safeProjectName}_${jobId}.${isZip ? 'zip' : 'mp4'}`;
+        const finalPath = path.join(__dirname, 'outputs', finalFilename);
+
+        if (isZip) {
+            updateJob({ status: 'zipping', progress: 95 });
+            await runCmd(`cd "${workDir}" && zip -r -q "${finalPath}" frames audio`);
+        } else {
+            updateJob({ status: 'creating_video', progress: 75 });
+
+            const FFMPEG_CONC = 3;
+
+            for (let i = 0; i < slides.length; i += FFMPEG_CONC) {
+                const batch = slides.slice(i, i + FFMPEG_CONC);
+
+                await Promise.all(batch.map(async (_, idx) => {
+                    const globalIdx = i + idx;
+                    const id = String(globalIdx).padStart(3, '0');
+
+                    const img = path.join(framesDir, `slide_${id}.png`);
+                    const mp3 = path.join(audioDir, `audio_${id}.mp3`);
+                    const out = path.join(segDir, `seg_${id}.mp4`);
+
+                    if (await fs.pathExists(mp3)) {
+                        const dur = await getAudioDuration(mp3);
+
+                        await runCmd(`ffmpeg -y \
+-loop 1 -framerate 30 -i "${img}" \
+-i "${mp3}" \
+-t ${dur} \
+-r 30 \
+-video_track_timescale 90000 \
+-c:v libx264 -preset ultrafast -tune stillimage \
+-c:a aac -ar 48000 -b:a 192k \
+-pix_fmt yuv420p \
+-movflags +faststart \
+"${out}"`);
+                    } else {
+                        await runCmd(`ffmpeg -y -loop 1 -framerate 30 -i "${img}" -t 3 -r 30 -c:v libx264 -preset ultrafast -pix_fmt yuv420p "${out}"`);
+                    }
+                }));
+
+                updateJob({ progress: 75 + Math.floor((i / slides.length) * 20) });
+            }
+
+            const list = (await fs.readdir(segDir))
+                .filter(f => f.endsWith('.mp4'))
+                .sort()
+                .map(f => `file 'segments/${f}'`)
+                .join('\n');
+
+            await fs.writeFile(path.join(workDir, 'list.txt'), list);
+
+            await runCmd(`cd "${workDir}" && ffmpeg -y -f concat -safe 0 -i list.txt -c copy "${finalPath}"`);
+        }
+
+        updateJob({ status: 'completed', progress: 100, downloadUrl: `/outputs/${finalFilename}` });
+
+        setTimeout(() => fs.remove(workDir).catch(() => {}), 600000);
+
+    } catch (err) {
+        updateJob({ status: 'failed', error: err.message });
+        fs.remove(workDir).catch(() => {});
+    }
+});
+
+// -------------------------
+// STATUS ROUTE
+// -------------------------
+
+app.get('/status/:jobId', (req, res) => {
+    const job = jobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(job);
+});
+
+app.listen(PORT, '0.0.0.0', () =>
+    console.log(`Perfect Sync Server running on ${PORT}`)
+);

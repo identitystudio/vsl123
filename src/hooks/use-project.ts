@@ -44,6 +44,12 @@ export function useProject(projectId: string) {
       } as unknown as VslProject;
     },
     enabled: !!projectId,
+    // Performance optimizations: keep data in cache and avoid redundant refetches
+    staleTime: 5 * 60 * 1000,           // 5 minutes - data is fresh for this duration
+    gcTime: 30 * 60 * 1000,             // 30 minutes - keep in memory for faster re-access
+    refetchOnWindowFocus: false,        // Don't refetch when user switches tabs
+    refetchOnReconnect: false,          // Don't refetch on network reconnect (optimistic updates handle this)
+    retry: 1,                           // Only retry once on failure
   });
 }
 
@@ -56,7 +62,7 @@ export function useUpdateProject() {
       updates,
     }: {
       projectId: string;
-      updates: Partial<Pick<VslProject, 'name' | 'original_script' | 'settings'>>;
+      updates: Partial<Pick<VslProject, 'name' | 'original_script' | 'settings' | 'emotional_beats'>>;
     }) => {
       const { data, error } = await supabase
         .from('vsl_projects')
@@ -107,7 +113,8 @@ export function useUpdateProject() {
 
 /**
  * Updates or creates all slides for a project. 
- * Use this when initially generating slides or doing a full reset.
+ * Use ONLY when initially generating slides. Do NOT use for updating existing slides after audio/edits.
+ * This function deletes and recreates slides, which can lose data if called at the wrong time.
  */
 export function useUpdateSlides() {
   const queryClient = useQueryClient();
@@ -120,21 +127,25 @@ export function useUpdateSlides() {
       projectId: string;
       slides: Slide[];
     }) => {
-      // 1. Delete existing slides (simpler for full regeneration)
+      // SAFETY CHECK: Only allow this function to be used for initial generation
+      // (when slides array has required properties for a new generation)
+      if (!slides || slides.length === 0) {
+        throw new Error('Cannot update slides with empty array. This would delete all slides.');
+      }
+
+      // 1. Delete existing slides (only for full regeneration - slide generation step)
       await supabase.from('slides').delete().eq('project_id', projectId);
 
       // 2. Insert new slides
-      if (slides.length > 0) {
-        const { error: insertError } = await supabase.from('slides').insert(
-          slides.map((s, index) => ({
-            id: s.id, // Preserve ID
-            project_id: projectId,
-            order_index: index,
-            data: s,
-          }))
-        );
-        if (insertError) throw insertError;
-      }
+      const { error: insertError } = await supabase.from('slides').insert(
+        slides.map((s, index) => ({
+          id: s.id, // Preserve ID
+          project_id: projectId,
+          order_index: index,
+          data: s,
+        }))
+      );
+      if (insertError) throw insertError;
 
       // Update project timestamp
       await supabase
@@ -166,41 +177,52 @@ export function useUpdateSingleSlide() {
       slideId: string;
       updates: Partial<Slide>;
     }) => {
-      // 1. Get current slide data to merge
-      const { data: current, error: getError } = await supabase
-        .from('slides')
-        .select('data')
-        .eq('id', slideId)
-        .maybeSingle();
-      
-      if (getError) throw getError;
-      
-      // If the slide was deleted (e.g. during regeneration), we can't update it
-      if (!current) {
-        console.warn(`Slide ${slideId} not found, skipping update`);
-        return null;
+      // Use jsonb concatenation (||) to merge updates into existing data
+      // This avoids fetching the entire data blob (which may contain multi-MB video base64)
+      const { data, error } = await supabase.rpc('merge_slide_data', {
+        p_slide_id: slideId,
+        p_updates: updates,
+      });
+
+      if (error) {
+        // Fallback: if RPC doesn't exist yet, use the old fetch-merge-save approach
+        if (error.code === '42883' || error.message?.includes('function') || error.message?.includes('does not exist')) {
+          console.warn('merge_slide_data RPC not found, using fallback');
+          const { data: current, error: getError } = await supabase
+            .from('slides')
+            .select('data, project_id')
+            .eq('id', slideId)
+            .maybeSingle();
+          
+          if (getError) throw getError;
+          if (!current) {
+            console.warn(`Slide ${slideId} not found, skipping update`);
+            return null;
+          }
+
+          const updatedData = { ...current.data, ...updates };
+          const { data: updated, error: updateError } = await supabase
+            .from('slides')
+            .update({ data: updatedData, updated_at: new Date().toISOString() })
+            .eq('id', slideId)
+            .select()
+            .maybeSingle();
+
+          if (updateError) throw updateError;
+          return updated;
+        }
+        throw error;
       }
 
-      const updatedData = { ...current.data, ...updates };
-
-      // 2. Update the DB
-      const { data, error } = await supabase
-        .from('slides')
-        .update({ 
-          data: updatedData, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', slideId)
-        .select()
-        .maybeSingle();
-
-      if (error) throw error;
       return data;
     },
     onSuccess: (data) => {
       if (data) {
-        queryClient.invalidateQueries({ queryKey: ['project', data.project_id] });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        const projectId = data.project_id;
+        if (projectId) {
+          queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+          queryClient.invalidateQueries({ queryKey: ['projects'] });
+        }
       }
     },
   });

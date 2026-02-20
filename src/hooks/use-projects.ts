@@ -71,6 +71,12 @@ export function useProjects(initialUserId?: string) {
 
       return projects as unknown as VslProject[];
     },
+    // Performance optimizations
+    staleTime: 2 * 60 * 1000,           // 2 minutes - dashboard doesn't need real-time updates
+    gcTime: 10 * 60 * 1000,             // 10 minutes - keep in memory
+    refetchOnWindowFocus: false,        // Don't refetch when user switches tabs
+    refetchOnReconnect: false,          // Don't refetch on reconnect
+    retry: 1,                           // Retry once on failure
   });
 
   return {
@@ -132,7 +138,13 @@ export function useDeleteProject() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, projectId) => {
+      // Optimistically remove from cache
+      queryClient.setQueriesData({ queryKey: ['projects'] }, (old: VslProject[] | undefined) => {
+        if (!old) return old;
+        return old.filter((p) => p.id !== projectId);
+      });
+      // Trigger refetch to be sure
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });

@@ -27,7 +27,7 @@ export interface BackgroundImage {
 }
 
 export interface SlideStyle {
-  background: 'white' | 'dark' | 'image' | 'gradient' | 'split';
+  background: 'white' | 'dark' | 'image' | 'gradient' | 'split' | 'video';
   textColor: 'white' | 'black' | 'custom';
   textSize: number;                // 48, 60, 72, 84, 96, 108, 120
   textWeight: 'regular' | 'bold' | 'extrabold';
@@ -79,6 +79,9 @@ export interface Slide {
   sceneNumber?: number;
   sceneTitle?: string;
   emotion?: string;
+  emotionalBeat?: string; // The specific emotional beat this slide belongs to
+  visualPrompt?: string;  // AI prompt for image generation
+  videoPrompt?: string;   // AI prompt for video generation
   imageKeyword?: string;
   reviewed?: boolean;
 }
@@ -149,6 +152,16 @@ export interface VslProject {
     created_at: string;
     display_name: string;
   }>;
+  infographic_videos?: Record<string, { uri: string; data?: string }>;
+  emotional_beats?: {
+    name: string;
+    emotion: string;
+    visualPrompt: string;
+    videoPrompt: string;
+    slideIds: string[];
+    imageUrl?: string;
+    videoUrl?: string;
+  }[];
 }
 
 export interface Scene {
