@@ -88,8 +88,8 @@ export async function generateText(options: GenerateOptions): Promise<string> {
       throw new Error("ANTHROPIC_API_KEY is not set");
     }
 
-    // Call Anthropic - Use specific stable version
-    const anthropicModel = "claude-3-5-sonnet-20241022";
+    // Call Anthropic - Use "latest" alias which always points to current version
+    const anthropicModel = "claude-3-5-sonnet-latest";
     
     // Update debug info for client
     lastDebugInfo = {
