@@ -67,7 +67,7 @@ export interface Slide {
   audioGenerated?: boolean;
 
   // Headshot
-  headshot?: HeadshotSettings;
+  headshot?: HeadshotSettings | null;
 
   // Infographic mode
   isInfographic?: boolean;

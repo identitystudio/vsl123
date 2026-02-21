@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Check, Pencil, SkipForward, Sparkles, X } from 'lucide-react';
 import { SlidePreview } from './slide-preview';
 import { SlideEditPanel } from './slide-edit-panel';
@@ -159,8 +160,19 @@ export function SlideReviewer({
   const headshotInputRef = useRef<HTMLInputElement>(null);
   const bgImageInputRef = useRef<HTMLInputElement>(null);
   const updateSingleSlide = useUpdateSingleSlide();
+  const queryClient = useQueryClient();
   const HOLD_DURATION = 1000;
   const [showInfographics, setShowInfographics] = useState(false);
+
+  const syncProjectSlides = useCallback(
+    (updatedSlides: Slide[]) => {
+      queryClient.setQueryData(['project', projectId], (old: any) => {
+        if (!old) return old;
+        return { ...old, slides: updatedSlides };
+      });
+    },
+    [projectId, queryClient]
+  );
 
   // Use a ref for slides to avoid stale closures in hold animation
   const slidesRef = useRef(slides);
@@ -259,6 +271,7 @@ export function SlideReviewer({
     const updated = [...slides];
     updated[currentIndex] = slideToSave;
     setSlides(updated);
+    syncProjectSlides(updated);
 
     if (currentIndex < slides.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -300,7 +313,7 @@ export function SlideReviewer({
     setEditing(true);
   };
 
-  const handleEditSave = (applyToAll?: boolean) => {
+  const handleEditSave = async (applyToAll?: boolean) => {
     if (!editSlide) return;
 
     if (applyToAll || applyToAllActive) {
@@ -321,6 +334,7 @@ export function SlideReviewer({
         };
       });
       setSlides(finalSlides);
+      syncProjectSlides(finalSlides);
       saveBulkSlides(finalSlides);
       setEditing(false);
       setEditSlide(null);
@@ -334,15 +348,18 @@ export function SlideReviewer({
     const absorbedIds = new Set(editSlide.absorbedSlideIds || []);
     let updated = slides.map((s, i) => (i === currentIndex ? slideToSave : s));
     
+    let savePromise: Promise<unknown> | undefined;
+
     if (absorbedIds.size > 0) {
       updated = updated.filter((s) => s.id === editSlide.id || !absorbedIds.has(s.id));
-      saveBulkSlides(updated);
+      savePromise = saveBulkSlides(updated);
     } else {
-      saveSingleSlide(slideToSave);
+      savePromise = saveSingleSlide(slideToSave);
     }
 
 
     setSlides(updated);
+    syncProjectSlides(updated);
 
     // Move to next slide and keep editing, or close if done
     if (currentIndex < updated.length - 1) {
@@ -351,6 +368,10 @@ export function SlideReviewer({
       setEditing(true);
       setEditSlide({ ...updated[nextIndex] });
     } else {
+      if (savePromise) {
+        await savePromise;
+      }
+      setViewingSlidesAnyway(false);
       setEditing(false);
       setEditSlide(null);
     }
@@ -372,6 +393,7 @@ export function SlideReviewer({
       };
     });
     setSlides(updated);
+    syncProjectSlides(updated);
     setApplyToAllActive(true);
     toast.success('Style applied to remaining slides — save to finish review');
   };
@@ -414,6 +436,7 @@ export function SlideReviewer({
       const updated = [...slides];
       updated[currentIndex] = result.slide;
       setSlides(updated);
+      syncProjectSlides(updated);
       
       // Save this slide (without changing reviewed status)
       saveSingleSlide(result.slide);
@@ -458,6 +481,7 @@ export function SlideReviewer({
 
     // 2. Update UI IMMEDIATELY to trigger the completion screen
     setSlides(finalSlides);
+    syncProjectSlides(finalSlides);
     setHoldProgress(0);
     setViewingSlidesAnyway(false);
     setForceViewActive(false);
@@ -717,6 +741,7 @@ export function SlideReviewer({
                   const updated = [...slides];
                   updated[currentIndex] = slideToSave;
                   setSlides(updated);
+                  syncProjectSlides(updated);
                   saveSingleSlide(slideToSave);
                 }
                 setCurrentIndex(index);
@@ -729,6 +754,7 @@ export function SlideReviewer({
                   const updated = [...slides];
                   updated[currentIndex] = slideToSave;
                   setSlides(updated);
+                  syncProjectSlides(updated);
                   saveSingleSlide(slideToSave);
                 }
                 setCurrentIndex(index);

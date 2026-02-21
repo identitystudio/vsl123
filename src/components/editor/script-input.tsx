@@ -18,7 +18,10 @@ import { toast } from 'sonner';
 interface ScriptInputProps {
   projectId: string;
   initialScript: string;
-  onSlidesGenerated: (slides: Slide[]) => void;
+  onSlidesGenerated: (
+    slides: Slide[],
+    options?: { autoPipeline?: boolean; originalScript?: string }
+  ) => Promise<void> | void;
 }
 
 // Magical rotating messages — Blair Warren inspired
@@ -898,7 +901,10 @@ export function ScriptInput({
       console.log(`%c✅ AI GENERATION COMPLETE`, 'background: #4CAF50; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
       console.log(`📊 Summary: ${styledSlides.length} slides | ${imageCount} images | ${infographicCount} infographics`);
       console.log('━'.repeat(50));
-      onSlidesGenerated(styledSlides);
+      await onSlidesGenerated(styledSlides, {
+        autoPipeline: true,
+        originalScript: script,
+      });
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message === 'AbortError') {
         console.log('Generation aborted by user');
@@ -957,7 +963,10 @@ export function ScriptInput({
       setProgress(100);
 
       toast.success(`Generated ${manualSlides.length} slides manually. Design them yourself!`);
-      onSlidesGenerated(manualSlides);
+      await onSlidesGenerated(manualSlides, {
+        autoPipeline: false,
+        originalScript: script,
+      });
     } catch (err) {
       toast.error('Failed to create slides manually');
       setGenerating(false);

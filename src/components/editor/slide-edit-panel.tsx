@@ -286,7 +286,7 @@ export function SlideEditPanel({
       onUpdate({
         ...slide,
         headshot: {
-          ...slide.headshot,
+          ...(slide.headshot || {}),
           imageUrl: dataUrl,
         },
       });
@@ -537,13 +537,13 @@ export function SlideEditPanel({
         newStyle = { background: 'dark', textColor: 'white' };
         newSlide.hasBackgroundImage = false;
         newSlide.backgroundImage = undefined;
-        newSlide.headshot = undefined;
+        newSlide.headshot = null;
         break;
       case 'white-background':
         newStyle = { background: 'white', textColor: 'black' };
         newSlide.hasBackgroundImage = false;
         newSlide.backgroundImage = undefined;
-        newSlide.headshot = undefined;
+        newSlide.headshot = null;
         break;
       case 'headshot-bio':
         newStyle = { background: 'white', textColor: 'black' };
@@ -554,7 +554,7 @@ export function SlideEditPanel({
       case 'image-backdrop':
         newStyle = { background: 'image', textColor: 'white' };
         newSlide.hasBackgroundImage = true;
-        newSlide.headshot = undefined;
+        newSlide.headshot = null;
         if (!newSlide.backgroundImage || !newSlide.backgroundImage.url) {
           newSlide.backgroundImage = {
             url: '',
@@ -571,7 +571,7 @@ export function SlideEditPanel({
       case 'image-text':
         newStyle = { background: 'split', textColor: 'black', splitRatio: 50 };
         newSlide.hasBackgroundImage = true;
-        newSlide.headshot = undefined;
+        newSlide.headshot = null;
         if (!newSlide.backgroundImage || !newSlide.backgroundImage.url) {
           newSlide.backgroundImage = {
             url: '',
@@ -600,7 +600,7 @@ export function SlideEditPanel({
         };
         newSlide.hasBackgroundImage = false;
         newSlide.backgroundImage = undefined;
-        newSlide.headshot = undefined;
+        newSlide.headshot = null;
         newSlide.isInfographic = true;
         // Start with current slide text as first caption
         newSlide.infographicCaptions = [slide.fullScriptText];
@@ -932,6 +932,7 @@ export function SlideEditPanel({
                     } else {
                       onUpdate({
                         ...slide,
+                        headshot: null,
                         style: {
                           ...slide.style,
                           background: bg,
@@ -1331,7 +1332,7 @@ export function SlideEditPanel({
                 onClick={() =>
                   onUpdate({
                     ...slide,
-                    headshot: { ...slide.headshot, imageUrl: undefined },
+                    headshot: { ...(slide.headshot || {}), imageUrl: undefined },
                   })
                 }
               >
