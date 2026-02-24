@@ -16,6 +16,29 @@ import { Input } from '@/components/ui/input';
 import type { EditorStep, Slide } from '@/types';
 import { toast } from 'sonner';
 
+const MAGIC_QUOTES = [
+  'Your vision is about to come to life...',
+  'Scene by scene. Slide by slide. Your funnel is being born.',
+  'Every word in your script is being turned into a conversion machine.',
+  'Almost there... your future audience has no idea what\'s coming.',
+  'Relax. We\'ve got your script—the hard part is already done.',
+  'No design degree needed. Your words are doing the heavy lifting.',
+  'Think of what you\'ll do with all that time you just got back...',
+  'This is the part where you get your weekends back.',
+  'Your message deserves to be seen. We\'re making sure it will be.',
+  'While your competitors fumble with Canva, you\'re already launching.',
+  'It was never about the tools. It was about finding the right one.',
+  'You always knew there had to be a faster way. There is.',
+  'No more $5K agency invoices for a simple slide deck.',
+  'Freelancers who take 3 weeks? You\'re doing it in 3 minutes.',
+  'After this? Maybe that guitar lesson. Or a walk with the kids.',
+  'The painting, the traveling, the living—it starts after this click.',
+  'This is really happening.',
+  'Your VSL is being assembled right now.',
+  'Every hour you spent struggling with other editors led you here.',
+  'You were right—VSLs shouldn\'t take weeks to produce.'
+];
+
 interface EditorContentProps {
   projectId: string;
 }
@@ -37,8 +60,21 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const [editingName, setEditingName] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [initialSlideIndex, setInitialSlideIndex] = useState(0);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [isEditingSlide, setIsEditingSlide] = useState(false);
   const [autoEdit, setAutoEdit] = useState(false);
+  const [autoPipelineLoading, setAutoPipelineLoading] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState<'analyzing' | 'imaging' | 'motion' | 'finishing'>('analyzing');
+  const [quoteIndex, setQuoteIndex] = useState(0);
   const autoPipelineRunningRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoPipelineLoading) return;
+    const interval = setInterval(() => {
+      setQuoteIndex((prev) => (prev + 1) % MAGIC_QUOTES.length);
+    }, 4200);
+    return () => clearInterval(interval);
+  }, [autoPipelineLoading]);
 
   // Prefetch dashboard to speed up "Back" navigation
   useEffect(() => {
@@ -211,139 +247,154 @@ export function EditorContent({ projectId }: EditorContentProps) {
   );
 
   const runAutoPipeline = useCallback(
-    async ({ slides, originalScript }: { slides: Slide[]; originalScript: string }) => {
-      if (autoPipelineRunningRef.current) return;
-      if (!originalScript.trim()) {
-        toast.error('Script is missing. Skipping emotional beats automation.');
-        return;
-      }
-
-      autoPipelineRunningRef.current = true;
-
-      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-      try {
-        toast.info('Auto pipeline started: analyzing emotional beats...');
-
-        const analyzeResponse = await fetch('/api/analyze-script-beats', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            script: originalScript,
-            slides: slides.map((s) => ({ id: s.id, fullScriptText: s.fullScriptText })),
-          }),
-        });
-
-        if (!analyzeResponse.ok) {
-          const err = await analyzeResponse.json().catch(() => ({}));
-          throw new Error(err.error || 'Failed to analyze script beats');
+      async ({ slides, originalScript }: { slides: Slide[]; originalScript: string }) => {
+        if (autoPipelineRunningRef.current) return;
+        if (!originalScript.trim()) {
+          toast.error('Script is missing. Skipping emotional beats automation.');
+          return;
         }
 
-        const analyzeData = await analyzeResponse.json();
-        if (!analyzeData.beats || !Array.isArray(analyzeData.beats)) {
-          throw new Error('Analyze beats response invalid');
-        }
+        autoPipelineRunningRef.current = true;
+        setAutoPipelineLoading(true);
 
-        let beats = analyzeData.beats as Array<any>;
-        await updateProject.mutateAsync({
-          projectId,
-          updates: { emotional_beats: beats },
-        });
+        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        toast.info('Generating images for emotional beats...');
+        try {
+          setPipelineStage('analyzing');
+          toast.info('Auto pipeline started: analyzing emotional beats...');
 
-        const beatsWithImages = beats.map((b) => ({ ...b }));
-        for (let i = 0; i < beatsWithImages.length; i += 1) {
-          const beat = beatsWithImages[i];
-          if (!beat?.visualPrompt) continue;
+          // Cap at 8 beats if 8+ slides, otherwise match slide count
+          const beatCount = Math.min(slides.length, 8);
 
-          await sleep(AUTO_BEAT_IMAGE_DELAY_MS);
+          const analyzeResponse = await fetch('/api/analyze-script-beats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              script: originalScript,
+              slides: slides.map((s) => ({ id: s.id, fullScriptText: s.fullScriptText })),
+              beatCount,
+            }),
+          });
 
-          try {
-            const imageResponse = await fetch('/api/generate-beat-image', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt: beat.visualPrompt }),
-            });
-
-            if (!imageResponse.ok) {
-              const text = await imageResponse.text();
-              console.warn('Beat image generation failed:', text);
-              continue;
-            }
-
-            const imageData = await imageResponse.json();
-            if (imageData?.imageUrl) {
-              beat.imageUrl = imageData.imageUrl;
-            }
-          } catch (err) {
-            console.warn('Beat image error:', err);
+          if (!analyzeResponse.ok) {
+            const err = await analyzeResponse.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to analyze script beats');
           }
-        }
 
-        beats = beatsWithImages;
-        await updateProject.mutateAsync({
-          projectId,
-          updates: { emotional_beats: beats },
-        });
-
-        toast.info('Generating videos for emotional beats...');
-
-        const beatsWithVideos = beats.map((b) => ({ ...b }));
-        for (let i = 0; i < beatsWithVideos.length; i += 1) {
-          const beat = beatsWithVideos[i];
-          if (!beat?.imageUrl) continue;
-
-          await sleep(AUTO_BEAT_VIDEO_DELAY_MS);
-
-          try {
-            const videoResponse = await fetch('/api/image-to-video', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                imageUrl: beat.imageUrl,
-                prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
-              }),
-            });
-
-            const videoData = await videoResponse.json().catch(() => ({}));
-            if (!videoResponse.ok) {
-              console.warn('Beat video generation failed:', videoData?.error || videoResponse.status);
-              continue;
-            }
-
-            const videoUrl = videoData.videoData
-              ? `data:video/mp4;base64,${videoData.videoData}`
-              : videoData.videoUri;
-
-            if (!videoUrl) continue;
-            beat.videoUrl = videoUrl;
-
-            if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
-              await handleApplyToSlide(videoUrl, 'video', beat.slideIds, slides);
-            }
-          } catch (err) {
-            console.warn('Beat video error:', err);
+          const analyzeData = await analyzeResponse.json();
+          if (!analyzeData.beats || !Array.isArray(analyzeData.beats)) {
+            throw new Error('Analyze beats response invalid');
           }
+
+          let beats = analyzeData.beats as Array<any>;
+          await updateProject.mutateAsync({
+            projectId,
+            updates: { emotional_beats: beats },
+          });
+
+          toast.info('Generating images for emotional beats...');
+          setPipelineStage('imaging');
+
+          const beatsWithImages = beats.map((b) => ({ ...b }));
+          for (let i = 0; i < beatsWithImages.length; i += 1) {
+            const beat = beatsWithImages[i];
+            if (!beat?.visualPrompt) continue;
+
+            await sleep(AUTO_BEAT_IMAGE_DELAY_MS);
+
+            try {
+              const imageResponse = await fetch('/api/generate-beat-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: beat.visualPrompt }),
+              });
+
+              if (!imageResponse.ok) {
+                const text = await imageResponse.text();
+                console.warn('Beat image generation failed:', text);
+                continue;
+              }
+
+              const imageData = await imageResponse.json();
+              if (imageData?.imageUrl) {
+                beat.imageUrl = imageData.imageUrl;
+                // Apply image to the first slide of the beat immediately for visual feedback
+                if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
+                  await handleApplyToSlide(beat.imageUrl, 'image', [beat.slideIds[0]], slides);
+                }
+              }
+            } catch (err) {
+              console.warn('Beat image error:', err);
+            }
+          }
+
+          beats = beatsWithImages;
+          await updateProject.mutateAsync({
+            projectId,
+            updates: { emotional_beats: beats },
+          });
+
+          toast.info('Generating videos for emotional beats...');
+          setPipelineStage('motion');
+
+          const beatsWithVideos = beats.map((b) => ({ ...b }));
+          for (let i = 0; i < beatsWithVideos.length; i += 1) {
+            const beat = beatsWithVideos[i];
+            if (!beat?.imageUrl) continue;
+
+            await sleep(AUTO_BEAT_VIDEO_DELAY_MS);
+
+            try {
+              const videoResponse = await fetch('/api/image-to-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  imageUrl: beat.imageUrl,
+                  prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
+                }),
+              });
+
+              const videoData = await videoResponse.json().catch(() => ({}));
+              if (!videoResponse.ok) {
+                console.warn('Beat video generation failed:', videoData?.error || videoResponse.status);
+                continue;
+              }
+
+              const videoUrl = videoData.videoData
+                ? `data:video/mp4;base64,${videoData.videoData}`
+                : videoData.videoUri;
+
+              if (!videoUrl) continue;
+              beat.videoUrl = videoUrl;
+
+              if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
+                // User requested only the first slide of each beat get the video/image
+                await handleApplyToSlide(videoUrl, 'video', [beat.slideIds[0]], slides);
+              }
+            } catch (err) {
+              console.warn('Beat video error:', err);
+            }
+          }
+
+          setPipelineStage('finishing');
+          beats = beatsWithVideos;
+          await updateProject.mutateAsync({
+            projectId,
+            updates: { emotional_beats: beats },
+          });
+
+          toast.success('Auto pipeline complete: beats, images, videos applied.');
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Auto pipeline failed';
+          console.error('Auto pipeline error:', err);
+          toast.error(message);
+        } finally {
+          autoPipelineRunningRef.current = false;
+          setAutoPipelineLoading(false);
         }
-
-        beats = beatsWithVideos;
-        await updateProject.mutateAsync({
-          projectId,
-          updates: { emotional_beats: beats },
-        });
-
-        toast.success('Auto pipeline complete: beats, images, videos applied.');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Auto pipeline failed';
-        console.error('Auto pipeline error:', err);
-        toast.error(message);
-      } finally {
-        autoPipelineRunningRef.current = false;
-      }
-    },
-    [handleApplyToSlide, projectId, updateProject]
-  );
+      },
+      [handleApplyToSlide, projectId, updateProject]
+    );
 
   const handleSlidesGenerated = useCallback(
     async (
@@ -358,14 +409,14 @@ export function EditorContent({ projectId }: EditorContentProps) {
           return { ...old, slides };
         });
 
-        setStep(2);
-
         if (options?.autoPipeline) {
           await runAutoPipeline({
             slides,
             originalScript: options.originalScript || project?.original_script || '',
           });
         }
+
+        setStep(2);
       } catch {
         toast.error('Failed to save slides');
       }
@@ -373,10 +424,133 @@ export function EditorContent({ projectId }: EditorContentProps) {
     [project?.original_script, projectId, queryClient, runAutoPipeline, updateSlides]
   );
 
-  if (isLoading || (isNewProject && !project)) {
+  if (isLoading || (isNewProject && !project) || autoPipelineLoading) {
+    const stages = [
+      { id: 'analyzing', label: 'Story Brain', desc: 'Analyzing emotional arc...', icon: '🧠' },
+      { id: 'imaging', label: 'Visual Soul', desc: 'Generating cinematic stills...', icon: '✨' },
+      { id: 'motion', label: 'Motion Magic', desc: 'Creating cinematic motion...', icon: '🎬' },
+      { id: 'finishing', label: 'Polishing', desc: 'Finalizing your experience...', icon: '💎' },
+    ];
+
+    const currentStageIdx = stages.findIndex(s => s.id === pipelineStage);
+    const progressPercent = ((currentStageIdx + 1) / stages.length) * 100;
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-        <Loader2 className="w-10 h-10 text-black animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#020203] text-white">
+        {/* Cinematic Background */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-purple-600/10 rounded-full blur-[120px] animate-pulse-slow" />
+          <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-[100px] animate-blob-float" />
+          <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-pink-600/5 rounded-full blur-[100px] animate-blob-float-reverse" />
+          {/* Grain Overlay */}
+          <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        </div>
+
+        <div className="relative z-10 w-full max-w-2xl px-8 flex flex-col items-center">
+          {/* Logo/Icon Area */}
+          <div className="mb-12 relative">
+            <div className="w-24 h-24 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-2xl backdrop-blur-xl group">
+              <Zap className="w-10 h-10 text-white fill-white/10 group-hover:scale-110 transition-transform duration-500" />
+              {/* Spinning Orbital */}
+              <div className="absolute inset-0 border-2 border-dashed border-white/20 rounded-2xl animate-spin-veryslow" />
+            </div>
+            {/* Pulsing Dot */}
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-ping" />
+          </div>
+
+          {/* Status Text */}
+          <div className="text-center mb-12 space-y-3">
+            <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
+              {stages[currentStageIdx]?.label}
+            </h1>
+            <p className="text-gray-400 text-lg font-light tracking-wide italic">
+              &quot;{MAGIC_QUOTES[quoteIndex]}&quot;
+            </p>
+          </div>
+
+          {/* Main Progress Container */}
+          <div className="w-full space-y-10">
+            {/* Stages Grid */}
+            <div className="grid grid-cols-4 gap-4">
+              {stages.map((s, idx) => {
+                const isPassed = idx < currentStageIdx;
+                const isCurrent = idx === currentSlideIndex; // Wait, currentSlideIndex is for slides, stage is different
+                const isActive = idx === currentStageIdx;
+                
+                return (
+                  <div key={s.id} className="flex flex-col items-center gap-2">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all duration-500 ${
+                      isActive 
+                        ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-110' 
+                        : isPassed 
+                          ? 'bg-purple-900/30 text-purple-400 border-purple-500/30' 
+                          : 'bg-white/5 text-white/20 border-white/10 font-grayscale'
+                    }`}>
+                      <span className="text-lg">{isPassed ? '✓' : s.icon}</span>
+                    </div>
+                    <span className={`text-[10px] uppercase tracking-widest font-bold ${
+                      isActive ? 'text-white' : 'text-white/20'
+                    }`}>
+                      {s.id}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="relative w-full h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+              <div 
+                className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 via-white to-blue-500 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(255,255,255,0.5)]"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            
+            {/* Detail Status */}
+            <div className="flex items-center justify-between text-xs tracking-widest uppercase font-semibold">
+              <span className="text-purple-400 animate-pulse">{stages[currentStageIdx]?.desc}</span>
+              <span className="text-white/40">{Math.round(progressPercent)}% COMPLETE</span>
+            </div>
+          </div>
+
+          {/* Footer Warning */}
+          <div className="mt-20 px-6 py-3 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+            <span className="text-[11px] text-gray-500 tracking-[0.2em] font-medium uppercase">
+              Keep this tab open &middot; Powering up your VSL
+            </span>
+          </div>
+        </div>
+
+        <style jsx>{`
+          .animate-pulse-slow {
+            animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          }
+          .animate-spin-veryslow {
+            animation: spin 8s linear infinite;
+          }
+          .animate-blob-float {
+            animation: blob 15s infinite;
+          }
+          .animate-blob-float-reverse {
+            animation: blob 15s infinite reverse;
+          }
+          @keyframes blob {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 0.1; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.15; transform: translate(-50%, -50%) scale(1.1); }
+          }
+          .font-grayscale {
+            filter: grayscale(100%);
+          }
+        `}</style>
       </div>
     );
   }
@@ -456,6 +630,8 @@ export function EditorContent({ projectId }: EditorContentProps) {
               }}
               forceShowSlides={forceSlideView}
               initialIndex={initialSlideIndex}
+              onIndexChange={setCurrentSlideIndex}
+              onEditingChange={setIsEditingSlide}
               autoEdit={autoEdit}
               savedInfographicImages={project.infographic_images}
               savedInfographicPrompt={project.infographic_prompt}
@@ -490,22 +666,25 @@ export function EditorContent({ projectId }: EditorContentProps) {
         </main>
         
         {/* Right Sidebar - Emotional Beats */}
-        <EmotionalBeatsSidebar
-            projectId={projectId}
-            emotionalBeats={emotionalBeats}
-            originalScript={project.original_script || ''}
-            slides={project.slides}
-            onApplyToSlide={handleApplyToSlide}
-            onGoToSlide={(slideId) => {
-              const slideIndex = project.slides.findIndex(s => s.id === slideId);
-              if (slideIndex !== -1) {
-                setInitialSlideIndex(slideIndex);
-                setAutoEdit(false);
-                setStep(2);
-                setForceSlideView(true);
-              }
-            }}
-        />
+        {isEditingSlide && (
+          <EmotionalBeatsSidebar
+              projectId={projectId}
+              emotionalBeats={emotionalBeats}
+              originalScript={project.original_script || ''}
+              slides={project.slides}
+              currentSlideIndex={currentSlideIndex}
+              onApplyToSlide={handleApplyToSlide}
+              onGoToSlide={(slideId) => {
+                const slideIndex = project.slides.findIndex(s => s.id === slideId);
+                if (slideIndex !== -1) {
+                  setInitialSlideIndex(slideIndex);
+                  setAutoEdit(false);
+                  setStep(2);
+                  setForceSlideView(true);
+                }
+              }}
+          />
+        )}
       </div>
     </div>
   );

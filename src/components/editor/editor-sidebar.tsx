@@ -349,10 +349,7 @@ export function InfographicsPanel({
                       {/* Info & Actions */}
                       <div className="p-2 space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-medium text-gray-700 truncate flex-1 mr-1">
-                            {image.display_name}
-                          </p>
-                          <span className="text-[9px] text-gray-400">{image.width}×{image.height}</span>
+                          <span className="text-[9px] text-gray-400">Dim: {image.width}×{image.height}</span>
                         </div>
 
                         {hasVideo && (

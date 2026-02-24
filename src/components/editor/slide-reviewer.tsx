@@ -19,6 +19,8 @@ interface SlideReviewerProps {
   forceShowSlides?: boolean;
   initialIndex?: number;
   autoEdit?: boolean;
+  onIndexChange?: (index: number) => void;
+  onEditingChange?: (isEditing: boolean) => void;
   savedInfographicImages?: any[];
   savedInfographicPrompt?: string;
   savedInfographicVideos?: Record<string, { uri: string; data?: string }>;
@@ -144,13 +146,23 @@ export function SlideReviewer({
   forceShowSlides,
   initialIndex = 0,
   autoEdit = false,
+  onIndexChange,
+  onEditingChange,
   savedInfographicImages,
   savedInfographicPrompt,
   savedInfographicVideos,
 }: SlideReviewerProps) {
   const [slides, setSlides] = useState<Slide[]>(initialSlides);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+
+  useEffect(() => {
+    onIndexChange?.(currentIndex);
+  }, [currentIndex, onIndexChange]);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
   const [editSlide, setEditSlide] = useState<Slide | null>(null);
   const [skipToValue, setSkipToValue] = useState('');
   const [holdProgress, setHoldProgress] = useState(0);

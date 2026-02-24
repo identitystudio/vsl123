@@ -168,7 +168,6 @@ export function useUpdateSlides() {
  */
 export function useUpdateSingleSlide() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async ({
       slideId,
@@ -178,7 +177,6 @@ export function useUpdateSingleSlide() {
       updates: Partial<Slide>;
     }) => {
       // Use jsonb concatenation (||) to merge updates into existing data
-      // This avoids fetching the entire data blob (which may contain multi-MB video base64)
       const { data, error } = await supabase.rpc('merge_slide_data', {
         p_slide_id: slideId,
         p_updates: updates,
@@ -213,16 +211,50 @@ export function useUpdateSingleSlide() {
         }
         throw error;
       }
-
       return data;
     },
-    onSuccess: (data) => {
-      if (data) {
-        const projectId = data.project_id;
-        if (projectId) {
-          queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-          queryClient.invalidateQueries({ queryKey: ['projects'] });
+    /**
+     * Optimistically update the slide in the cache
+     */
+    onMutate: async ({ slideId, updates }) => {
+      // Find the project ID that contains this slide
+      const queryData = queryClient.getQueriesData<VslProject>({ queryKey: ['project'] });
+      let targetProjectId: string | null = null;
+      
+      for (const [key, project] of queryData) {
+        if (project?.slides?.some(s => s.id === slideId)) {
+          targetProjectId = (key[1] as string);
+          break;
         }
+      }
+
+      if (targetProjectId) {
+        await queryClient.cancelQueries({ queryKey: ['project', targetProjectId] });
+        const previousProject = queryClient.getQueryData(['project', targetProjectId]);
+
+        queryClient.setQueryData(['project', targetProjectId], (old: VslProject | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            slides: old.slides.map(s => s.id === slideId ? { ...s, ...updates } : s)
+          };
+        });
+
+        return { previousProject, targetProjectId };
+      }
+      return {};
+    },
+    onError: (err, variables, context: any) => {
+      if (context?.previousProject && context?.targetProjectId) {
+        queryClient.setQueryData(['project', context.targetProjectId], context.previousProject);
+      }
+    },
+    onSuccess: (data: any, variables, context: any) => {
+      // Use the project ID from context or from returned data
+      const projectId = context?.targetProjectId || data?.project_id;
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
       }
     },
   });

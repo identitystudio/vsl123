@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(request: NextRequest) {
   try {
-    const { script, slides } = await request.json();
+    const { script, slides, beatCount = 8 } = await request.json();
 
     if (!script || typeof script !== 'string' || script.trim().length === 0) {
       return NextResponse.json(
@@ -20,61 +20,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If slides are provided, include their IDs for mapping
+    // Truncate slide text for reference to save context and avoid output lag
     let slidesContext = '';
     if (slides && Array.isArray(slides) && slides.length > 0) {
-      slidesContext = `\n\nSLIDES FOR REFERENCE (map beats to these slide IDs):\n` +
-        slides.map((s: any, i: number) => `SLIDE ${i + 1} (ID: ${s.id}): ${s.fullScriptText}`).join('\n');
+      slidesContext = `\n\nSLIDES FOR REFERENCE:\n` +
+        slides.map((s: any, i: number) => `[S${i + 1}] ${s.fullScriptText.substring(0, 150)}...`).join('\n');
     }
 
+    const finalBeatCount = Math.max(1, beatCount);
+    
     const prompt = `
-    Analyze the following Video Sales Letter (VSL) script.
-    Break it down into EXACTLY 8 distinct emotional "beats" or sections.
+    Analyze the script into EXACTLY ${finalBeatCount} emotional beats.
     
-    CONSTRAINTS:
-    - You MUST return EXACTLY 8 beats. No more, no less.
-    - Beats should follow the narrative arc of a VSL (e.g., Hook -> Problem -> Agitation -> Story -> Solution -> Authority/Proof -> Offer -> CTA).
-    - Each beat should represent a meaningful emotional shift in the script.
-    
-    FOR EACH BEAT, PROVIDE:
-    1. "name": A short 2-4 word title (e.g., "The Frustration", "The Hidden Solution", "Proof It Works").
-    2. "emotion": The dominant emotion (e.g., "Curious", "Frustrated", "Hopeful", "Urgent", "Excited", "Trusting").
-    3. "visualPrompt": A highly descriptive, artistic, text-free prompt for an AI image generator.
-       - Focus on lighting, mood, composition, texture, cinematography.
-       - NO TEXT in the image.
-       - Make it vivid and specific, at least 20 words.
-       - Example: "Cinematic shot of a stressed entrepreneur at a desk with scattered papers, dark moody blue lighting, rain streaking down window, shallow depth of field, 8k resolution"
-    4. "videoPrompt": A prompt for AI video generation from the image.
-       - Focus on subtle camera movement (e.g., "Slow zoom in", "Gentle pan right", "Dolly forward").
-       - Keep it short and cinematic, 10-15 words.
-    5. "slideIds": An array of slide IDs that belong to this beat (if slides were provided, otherwise empty array).
-    6. "scriptExcerpt": A brief 1-sentence summary of what this part of the script covers.
-
-    RETURN JSON ONLY (no markdown, no explanation):
+    REQUIRED JSON FORMAT:
     {
       "beats": [
         {
-          "name": "...",
-          "emotion": "...",
-          "visualPrompt": "...",
-          "videoPrompt": "...",
-          "slideIds": [],
-          "scriptExcerpt": "..."
+          "name": "Short summary",
+          "emotion": "Single word",
+          "visualPrompt": "20-word visual description, no text",
+          "videoPrompt": "4-word motion",
+          "startSlideIndex": number,
+          "endSlideIndex": number,
+          "scriptExcerpt": "Quote"
         }
       ]
     }
 
+    CONSTRAINTS:
+    - ONLY return the JSON.
+    - Be concise to prevent truncation.
+
     SCRIPT:
-    ${script}${slidesContext}
+    ${script.substring(0, 6000)}
     `;
 
+    console.log(`[AI] Analyzing into ${finalBeatCount} beats...`);
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 8192,
-        temperature: 0.7,
+        maxOutputTokens: 4096,
+        temperature: 0.1,
       } as any,
     });
 
@@ -82,31 +70,72 @@ export async function POST(request: NextRequest) {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
 
-    const text = result.response.text().trim();
-    console.log('Analyze beats raw response length:', text.length);
+    let text = result.response.text().trim();
+    
+    // Extraction: find the outermost { }
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      text = text.substring(start, end + 1);
+    }
 
     let data: any;
     try {
       data = JSON.parse(text);
-    } catch (parseErr) {
-      console.error('JSON parse error, raw text:', text.substring(0, 500));
-      return NextResponse.json(
-        { error: 'AI returned invalid JSON. Please try again.' },
-        { status: 500 }
-      );
+    } catch (e) {
+      // Repair strategy: find the last completed object in the "beats" array
+      try {
+        if (text.includes('"beats"')) {
+          const lastObjectEnd = text.lastIndexOf('}');
+          if (lastObjectEnd !== -1) {
+            let repaired = text.substring(0, lastObjectEnd + 1);
+            // Close array and object
+            if (!repaired.endsWith(']}')) repaired += ']}';
+            if (!repaired.endsWith('}')) repaired += '}';
+            data = JSON.parse(repaired);
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      } catch (innerE) {
+        console.error('JSON REPAIR FAILED. Raw text:', text);
+        throw new Error('AI response was unstable. Please try again with a shorter script portion.');
+      }
     }
 
-    // Ensure beats array exists
-    if (!data.beats || !Array.isArray(data.beats)) {
-      return NextResponse.json(
-        { error: 'Invalid response format from AI' },
-        { status: 500 }
-      );
+    if (!data || !data.beats || !Array.isArray(data.beats)) {
+      throw new Error('Invalid format: AI did not return a beats array');
+    }
+
+    // Map indices back to UUID slideIds
+    if (slides && Array.isArray(slides) && slides.length > 0) {
+      data.beats = data.beats.map((beat: any) => {
+        // Handle potential string vs number from AI
+        const startIdxRaw = parseInt(beat.startSlideIndex);
+        const endIdxRaw = parseInt(beat.endSlideIndex);
+        
+        const startIdx = Math.max(1, isNaN(startIdxRaw) ? 1 : startIdxRaw) - 1;
+        const endIdx = Math.min(slides.length, isNaN(endIdxRaw) ? slides.length : endIdxRaw);
+        
+        // Extract the actual IDs for the range
+        const slideIds = slides.slice(startIdx, endIdx).map((s: any) => s.id);
+        
+        return {
+          ...beat,
+          slideIds: slideIds // Frontend expects slideIds array
+        };
+      });
     }
 
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('Analyze script beats error:', error);
+    // Log more detail if available
+    if (error.response) {
+      console.error('AI Response Error:', JSON.stringify(error.response, null, 2));
+    }
     return NextResponse.json(
       { error: error?.message || 'Failed to analyze script beats' },
       { status: 500 }

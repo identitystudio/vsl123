@@ -365,12 +365,7 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
                 )}
               </div>
             )}
-            {/* Cycling Captions */}
-            <InfographicCaptions
-              captions={slide.infographicCaptions || [slide.fullScriptText]}
-              scale={scale}
-              textColor={textColor}
-            />
+            {/* Captions removed per user request */}
           </div>
         ) : (
           <>
