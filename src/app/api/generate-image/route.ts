@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getThemeConfig, type ImageTheme } from '@/lib/image-themes';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, provider, apiKey } = await request.json();
+    const { prompt, provider, apiKey, theme = 'realism' } = await request.json();
 
     if (!prompt || !provider || !apiKey) {
       return NextResponse.json(
@@ -12,9 +13,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (provider === 'openai') {
-      return await generateWithOpenAI(prompt, apiKey);
+      return await generateWithOpenAI(prompt, apiKey, theme as ImageTheme);
     } else if (provider === 'gemini') {
-      return await generateWithGemini(prompt, apiKey);
+      return await generateWithGemini(prompt, apiKey, theme as ImageTheme);
     } else {
       return NextResponse.json(
         { error: 'Invalid provider. Use "openai" or "gemini".' },
@@ -29,7 +30,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function generateWithOpenAI(prompt: string, apiKey: string) {
+async function generateWithOpenAI(prompt: string, apiKey: string, theme: ImageTheme = 'realism') {
+  const themeConfig = getThemeConfig(theme);
+
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: {
@@ -38,11 +41,11 @@ async function generateWithOpenAI(prompt: string, apiKey: string) {
     },
     body: JSON.stringify({
       model: 'dall-e-3',
-      prompt: `Ultra realistic, professional: ${prompt}`,
+      prompt: `${themeConfig.promptPrefix} ${prompt}`,
       n: 1,
       size: '1792x1024',
       quality: 'hd',
-      style: 'natural',
+      style: themeConfig.openAIStyle,
     }),
   });
 
@@ -66,7 +69,9 @@ async function generateWithOpenAI(prompt: string, apiKey: string) {
   return NextResponse.json({ imageUrl, revisedPrompt, provider: 'openai' });
 }
 
-async function generateWithGemini(prompt: string, apiKey: string) {
+async function generateWithGemini(prompt: string, apiKey: string, theme: ImageTheme = 'realism') {
+  const themeConfig = getThemeConfig(theme);
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
     {
@@ -75,7 +80,7 @@ async function generateWithGemini(prompt: string, apiKey: string) {
       body: JSON.stringify({
         instances: [
           {
-            prompt: `Ultra realistic, professional: ${prompt}`,
+            prompt: `${themeConfig.promptPrefix} ${prompt}`,
           },
         ],
         parameters: {

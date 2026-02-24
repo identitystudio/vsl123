@@ -1,8 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
+import { getThemeConfig, type ImageTheme } from "@/lib/image-themes";
 
 export async function POST(req: Request) {
   try {
-    const { imageUrl, prompt } = await req.json();
+    const { imageUrl, prompt, theme = 'realism' } = await req.json();
 
     if (!imageUrl || !prompt) {
       return Response.json(
@@ -20,6 +21,7 @@ export async function POST(req: Request) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
+    const themeConfig = getThemeConfig(theme as ImageTheme);
 
     // Fetch the image from URL (with basic validation)
     console.log("Fetching image from:", imageUrl);
@@ -36,10 +38,13 @@ export async function POST(req: Request) {
 
     console.log("Starting Veo video generation...");
 
+    // Enhance prompt with theme-specific video modifier
+    const enhancedPrompt = `${prompt}. ${themeConfig.videoPromptModifier}`;
+
     // Generate video with Veo 3.1 using the image
     let operation = await ai.models.generateVideos({
       model: "veo-3.1-generate-preview",
-      prompt: prompt,
+      prompt: enhancedPrompt,
       image: {
         imageBytes: imageBytes,
         mimeType: mimeType,

@@ -30,6 +30,7 @@ interface AiImageDialogProps {
   imageKeyword?: string;
   sceneTitle?: string;
   emotion?: string;
+  theme?: 'realism' | 'infographic';
   onImageGenerated: (imageUrl: string) => void;
 }
 
@@ -46,6 +47,7 @@ export function AiImageDialog({
   imageKeyword,
   sceneTitle,
   emotion,
+  theme = 'realism',
   onImageGenerated,
 }: AiImageDialogProps) {
   const [step, setStep] = useState<Step>('generating-prompt');
@@ -92,6 +94,7 @@ export function AiImageDialog({
           imageKeyword: imageKeyword || '',
           sceneTitle: sceneTitle || '',
           emotion: emotion || '',
+          theme,
         }),
       });
 
@@ -161,6 +164,7 @@ export function AiImageDialog({
           prompt,
           provider: selectedProvider,
           apiKey: key,
+          theme,
         }),
       });
 

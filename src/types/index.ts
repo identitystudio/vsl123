@@ -112,11 +112,14 @@ export interface InfographicData {
   updated_at: string;
 }
 
+export type ImageGenerationTheme = 'realism' | 'infographic';
+
 export interface ProjectSettings {
   theme: 'light' | 'dark';
   textSize: number;
   textAlignment: 'center' | 'left' | 'right';
   projectType?: 'vsl' | 'infographic';
+  imageTheme?: ImageGenerationTheme;
   audio?: AudioSettings;
   selectedSlideIndex?: number;
   infographicData?: InfographicData;

@@ -12,8 +12,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { useUpdateProject } from '@/hooks/use-project';
-import type { Slide, SlideStyle, TextSegment, BackgroundImage, InfographicVisual } from '@/types';
+import type { Slide, SlideStyle, TextSegment, BackgroundImage, InfographicVisual, ImageGenerationTheme } from '@/types';
 import { toast } from 'sonner';
+import { ThemeSelectionDialog } from './theme-selection-dialog';
 
 interface ScriptInputProps {
   projectId: string;
@@ -382,6 +383,8 @@ export function ScriptInput({
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showOptions, setShowOptions] = useState(false);
+  const [showThemeDialog, setShowThemeDialog] = useState(false);
+  const [selectedImageTheme, setSelectedImageTheme] = useState<ImageGenerationTheme>('realism');
   const updateProject = useUpdateProject();
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -411,12 +414,19 @@ export function ScriptInput({
     }
   };
 
-  const handleAIGenerate = async () => {
+  const handleAIGenerate = () => {
     setShowOptions(false);
     if (!script.trim()) {
       toast.error('Please paste your VSL script first');
       return;
     }
+    // Show theme selection dialog before starting generation
+    setShowThemeDialog(true);
+  };
+
+  const handleThemeSelectedAndGenerate = async (theme: ImageGenerationTheme) => {
+    setShowThemeDialog(false);
+    setSelectedImageTheme(theme); // persisted so ThemeSelectionDialog can default to last choice
 
     setGenerating(true);
     setProgress(5);
@@ -530,6 +540,7 @@ export function ScriptInput({
             imageKeyword: s.imageKeyword,
           })),
           userPrompt: aiPrompt,
+          theme,
         }),
         signal,
       });
@@ -1108,6 +1119,14 @@ export function ScriptInput({
           </p>
         )}
       </div>
+
+      {/* Theme Selection Dialog */}
+      <ThemeSelectionDialog
+        open={showThemeDialog}
+        onClose={() => setShowThemeDialog(false)}
+        onThemeSelected={handleThemeSelectedAndGenerate}
+        defaultTheme={selectedImageTheme}
+      />
     </div>
   );
 }

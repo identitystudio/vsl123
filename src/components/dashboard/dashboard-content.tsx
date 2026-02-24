@@ -6,13 +6,6 @@ import { Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useProjects, useCreateProject, useDeleteProject } from '@/hooks/use-projects';
 import { useUpdateProject } from '@/hooks/use-project';
@@ -32,31 +25,21 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [creatingProject, setCreatingProject] = useState(false);
+  // Dedicated loading state for the "New Project" button only
+  const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
-  const handleNewProject = (projectType: 'vsl' | 'infographic') => {
-    if (creatingProject) return;
-    setCreatingProject(true);
+  const handleNewProject = () => {
+    if (isCreatingNewProject) return;
+    setIsCreatingNewProject(true);
     const newId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    
-    // Redirect based on project type
-    if (projectType === 'infographic') {
-      router.push(`/infographics/${newId}`);
-    } else {
-      router.push(`/editor/${newId}?new=1`);
-    }
-    
+    router.push(`/editor/${newId}?new=1`);
     createProject
-      .mutateAsync({ id: newId, projectType })
+      .mutateAsync({ id: newId, projectType: 'vsl' })
       .catch(() => {
         toast.error('Failed to create project');
-        setCreatingProject(false);
-      })
-      .finally(() => {
-        setIsCreateDialogOpen(false);
+        setIsCreatingNewProject(false);
       });
   };
 
@@ -162,16 +145,16 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold">Your Projects</h1>
           <Button
-            onClick={() => setIsCreateDialogOpen(true)}
+            onClick={handleNewProject}
             className="bg-black text-white hover:bg-gray-800 gap-2"
-            disabled={creatingProject}
+            disabled={isCreatingNewProject}
           >
-            {creatingProject ? (
+            {isCreatingNewProject ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Plus className="w-4 h-4" />
             )}
-            {creatingProject ? 'Creating...' : 'New Project'}
+            {isCreatingNewProject ? 'Creating...' : 'New Project'}
           </Button>
         </div>
 
@@ -293,61 +276,20 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
           <div className="text-center py-20">
             <p className="text-gray-500 mb-4">No projects yet</p>
             <Button
-              onClick={() => setIsCreateDialogOpen(true)}
+              onClick={handleNewProject}
               className="bg-black text-white hover:bg-gray-800 gap-2"
-              disabled={creatingProject}
+              disabled={isCreatingNewProject}
             >
-              {creatingProject ? (
+              {isCreatingNewProject ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Plus className="w-4 h-4" />
               )}
-              {creatingProject ? 'Creating...' : 'Create your first VSL'}
+              {isCreatingNewProject ? 'Creating...' : 'Create your first VSL'}
             </Button>
           </div>
         ) : null}
       </main>
-
-      {/* Create Project Modal */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Choose project type</DialogTitle>
-            <DialogDescription>
-              Default uses the VSL script editor. Infographic is optimized for data visuals.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <button
-              type="button"
-              onClick={() => handleNewProject('vsl')}
-              disabled={creatingProject}
-              className="w-full text-left rounded-lg border border-gray-200 p-4 hover:border-black/20 hover:bg-gray-50 transition-colors"
-            >
-              <div className="font-semibold text-gray-900">Default (VSL Script)</div>
-              <div className="text-sm text-gray-500">Start with the script, then design slides.</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNewProject('infographic')}
-              disabled={creatingProject}
-              className="w-full text-left rounded-lg border border-gray-200 p-4 hover:border-black/20 hover:bg-gray-50 transition-colors"
-            >
-              <div className="font-semibold text-gray-900">Infographic</div>
-              <div className="text-sm text-gray-500">Focus on visuals and data-driven slides.</div>
-            </button>
-            <div className="flex justify-end pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsCreateDialogOpen(false)}
-                disabled={creatingProject}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

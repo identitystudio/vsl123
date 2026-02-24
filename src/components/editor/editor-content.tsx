@@ -175,12 +175,12 @@ export function EditorContent({ projectId }: EditorContentProps) {
                   blur: 0,
                   displayMode: 'crisp' as const,
                 };
-                newSlide.style = { ...newSlide.style, background: 'image' };
+                newSlide.style = { ...newSlide.style, background: 'image', textColor: 'white' };
               } else {
                 newSlide.backgroundVideoUrl = url;
                 newSlide.hasBackgroundImage = false;
                 newSlide.backgroundImage = undefined;
-                newSlide.style = { ...newSlide.style, background: 'video' };
+                newSlide.style = { ...newSlide.style, background: 'video', textColor: 'white' };
               }
               return newSlide;
             }
@@ -212,12 +212,12 @@ export function EditorContent({ projectId }: EditorContentProps) {
                   blur: 0,
                   displayMode: 'crisp',
                 };
-                updates.style = { ...slide.style, background: 'image' };
+                updates.style = { ...slide.style, background: 'image', textColor: 'white' };
               } else {
                 updates.backgroundVideoUrl = url;
                 updates.hasBackgroundImage = false;
                 updates.backgroundImage = undefined;
-                updates.style = { ...slide.style, background: 'video' };
+                updates.style = { ...slide.style, background: 'video', textColor: 'white' };
               }
               // Use RPC for efficient JSONB merge (avoids reading/writing full data blob)
               return supabase.rpc('merge_slide_data', {
@@ -424,7 +424,17 @@ export function EditorContent({ projectId }: EditorContentProps) {
     [project?.original_script, projectId, queryClient, runAutoPipeline, updateSlides]
   );
 
-  if (isLoading || (isNewProject && !project) || autoPipelineLoading) {
+  // Simple spinner for initial page load / new project redirect
+  if (isLoading || (isNewProject && !project)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  // Story Brain cinematic loading — only for the AI automation pipeline
+  if (autoPipelineLoading) {
     const stages = [
       { id: 'analyzing', label: 'Story Brain', desc: 'Analyzing emotional arc...', icon: '🧠' },
       { id: 'imaging', label: 'Visual Soul', desc: 'Generating cinematic stills...', icon: '✨' },

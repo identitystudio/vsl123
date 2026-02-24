@@ -10,7 +10,6 @@ import {
   Loader2,
   Search,
   Plus,
-  Minus,
   BarChart3,
   Check,
   Pencil,
@@ -267,7 +266,6 @@ export function SlideEditPanel({
   const [showImageSearch, setShowImageSearch] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [showAiPrompt, setShowAiPrompt] = useState(false);
-  const [loadingInfographic, setLoadingInfographic] = useState(false);
   const [aiStylingWords, setAiStylingWords] = useState(false);
   const localHeadshotRef = useRef<HTMLInputElement>(null);
   const headshotRef = headshotInputRef || localHeadshotRef;
@@ -417,8 +415,6 @@ export function SlideEditPanel({
 
   // Fetch AI-generated infographic content (visual + bundled lines)
   const fetchInfographicContent = useCallback(async (newSlide: Slide, newStyle: Partial<SlideStyle>) => {
-    setLoadingInfographic(true);
-
     try {
       // Fetch visual and lines in parallel
       const [visualResponse, linesResponse] = await Promise.all([
@@ -483,8 +479,6 @@ export function SlideEditPanel({
       console.error('Failed to fetch infographic content:', error);
       // Keep the basic infographic setup even on error
       toast.error('Could not auto-generate infographic. You can edit manually.');
-    } finally {
-      setLoadingInfographic(false);
     }
   }, [slide, nextSlides, onUpdate]);
 
@@ -647,6 +641,7 @@ export function SlideEditPanel({
       style: {
         ...slide.style,
         background: slide.style.background === 'split' ? 'split' : 'image',
+        textColor: 'white',
       },
     });
   };
@@ -1347,17 +1342,6 @@ export function SlideEditPanel({
       {/* Infographic Controls */}
       {slide.isInfographic && (
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4" />
-            <span className="font-semibold text-sm">Infographic Captions</span>
-            {loadingInfographic && (
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            )}
-          </div>
-          <p className="text-xs text-gray-500 mb-3">
-            These lines will cycle as captions on the infographic slide.
-          </p>
-
           {/* Visual Preview */}
           {slide.infographicVisual && (
             <div className="mb-3 p-3 bg-gray-50 rounded-lg flex items-center gap-3">
@@ -1377,72 +1361,6 @@ export function SlideEditPanel({
                 AI-generated visual ({slide.infographicVisual.type})
               </div>
             </div>
-          )}
-
-          {/* Caption List */}
-          <div className="space-y-2 mb-3">
-            {(slide.infographicCaptions || [slide.fullScriptText]).map((caption, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-5 h-5 flex items-center justify-center text-xs bg-gray-100 rounded">
-                  {i + 1}
-                </span>
-                <span className="flex-1 text-sm text-gray-700 truncate">
-                  {caption}
-                </span>
-                {(slide.infographicCaptions?.length || 1) > 1 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                    onClick={() => {
-                      const newCaptions = [...(slide.infographicCaptions || [])];
-                      newCaptions.splice(i, 1);
-                      // Also remove from absorbedSlideIds if we have them
-                      const absorbedIds = slide.absorbedSlideIds || [];
-                      const newAbsorbedIds = i > 0 && i <= absorbedIds.length
-                        ? absorbedIds.filter((_, idx) => idx !== i - 1)
-                        : absorbedIds;
-                      onUpdate({
-                        ...slide,
-                        infographicCaptions: newCaptions,
-                        absorbedSlideIds: newAbsorbedIds,
-                      });
-                    }}
-                  >
-                    <Minus className="w-3 h-3" />
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Add next slide caption */}
-          {nextSlides.length > 0 && (slide.infographicCaptions?.length || 1) < 6 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => {
-                const currentCaptionCount = slide.infographicCaptions?.length || 1;
-                const nextSlideToAdd = nextSlides[currentCaptionCount - 1];
-                if (nextSlideToAdd) {
-                  onUpdate({
-                    ...slide,
-                    infographicCaptions: [
-                      ...(slide.infographicCaptions || [slide.fullScriptText]),
-                      nextSlideToAdd.fullScriptText,
-                    ],
-                    absorbedSlideIds: [
-                      ...(slide.absorbedSlideIds || []),
-                      nextSlideToAdd.id,
-                    ],
-                  });
-                }
-              }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Next Line
-            </Button>
           )}
 
           {/* Remove infographic mode */}

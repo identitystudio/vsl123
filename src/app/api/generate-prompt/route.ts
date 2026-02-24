@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { buildPromptWithTheme, type ImageTheme } from '@/lib/image-themes';
 
 export async function POST(request: NextRequest) {
   try {
-    const { slideText, imageKeyword, sceneTitle, emotion } = await request.json();
+    const { slideText, imageKeyword, sceneTitle, emotion, theme = 'realism' } = await request.json();
 
     if (!slideText) {
       return NextResponse.json(
@@ -22,7 +23,10 @@ export async function POST(request: NextRequest) {
           imageKeyword: imageKeyword || '',
           sceneTitle: sceneTitle || '',
           emotion: emotion || '',
-          style: 'ultra realistic, professional, high quality, 4K, cinematic lighting',
+          theme,
+          style: theme === 'infographic'
+            ? 'modern infographic style, flat design, minimalist, bold colors, vector illustration'
+            : 'ultra realistic, professional, high quality, 4K, cinematic lighting',
         }),
       }
     );
@@ -30,8 +34,8 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Webhook error:', errText);
-      // Fallback: generate a basic prompt locally
-      const fallbackPrompt = `Ultra realistic, professional photograph. ${slideText}. ${imageKeyword ? `Subject: ${imageKeyword}.` : ''} High quality, 4K resolution, cinematic lighting, clean composition.`;
+      // Fallback: generate a theme-based prompt locally
+      const fallbackPrompt = buildPromptWithTheme(theme as ImageTheme, slideText, imageKeyword);
       return NextResponse.json({ prompt: fallbackPrompt, source: 'fallback' });
     }
 
