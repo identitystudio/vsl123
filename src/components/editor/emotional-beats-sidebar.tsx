@@ -57,7 +57,7 @@ export function EmotionalBeatsSidebar({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [generatingImage, setGeneratingImage] = useState<Record<number, boolean>>({});
   const [generatingVideo, setGeneratingVideo] = useState<Record<number, boolean>>({});
-  const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
+  const [manualInputs, setManualInputs] = useState<Record<string, string>>({});
   const [selectedTheme, setSelectedTheme] = useState<ImageGenerationTheme>('realism');
   const [apiKey, setApiKey] = useState('');
   const updateProject = useUpdateProject();
@@ -323,7 +323,7 @@ export function EmotionalBeatsSidebar({
                   <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden border">
                     {beat.imageUrl ? (
                       <img 
-                        src={`${beat.imageUrl}${beat.imageUrl.includes('?') ? '&' : '?'}v=${Date.now()}`} 
+                        src={beat.imageUrl} 
                         className="w-full h-full object-cover" 
                         crossOrigin="anonymous"
                         referrerPolicy="no-referrer"
@@ -381,8 +381,12 @@ export function EmotionalBeatsSidebar({
                     onClick={() => handleGenerateImage(index)}
                     disabled={generatingImage[index]}
                   >
-                    <ImageIcon className="w-3 h-3" />
-                    {beat.imageUrl ? 'Regen' : 'Gen'} Image
+                    {generatingImage[index] ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-3 h-3" />
+                    )}
+                    {generatingImage[index] ? 'Generating...' : beat.imageUrl ? 'Regen Image' : 'Gen Image'}
                   </Button>
                   <Button
                     variant="outline"
@@ -390,56 +394,118 @@ export function EmotionalBeatsSidebar({
                     onClick={() => handleGenerateVideo(index)}
                     disabled={generatingVideo[index] || !beat.imageUrl}
                   >
-                    <Video className="w-3 h-3" />
-                    {beat.videoUrl ? 'Regen' : 'Gen'} Video
+                    {generatingVideo[index] ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Video className="w-3 h-3" />
+                    )}
+                    {generatingVideo[index] ? 'Generating...' : beat.videoUrl ? 'Regen Video' : 'Gen Video'}
                   </Button>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-gray-500 uppercase">Apply Visuals</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      className="h-7 text-[10px] bg-black hover:bg-gray-800"
-                      onClick={() => onApplyToSlide(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', [beat.slideIds[0]])}
-                      disabled={!beat.imageUrl && !beat.videoUrl}
-                    >
-                      Apply: First Slide
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 text-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-black"
-                      onClick={() => onApplyToSlide(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', [slides[currentSlideIndex].id])}
-                      disabled={!beat.imageUrl && !beat.videoUrl}
-                    >
-                      Apply: Current
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="relative flex-1">
-                      <Input
-                        placeholder="Slide #"
-                        className="h-7 text-[10px] pr-8 focus-visible:ring-black"
-                        value={manualInputs[index] || ''}
-                        onChange={(e) => setManualInputs(prev => ({ ...prev, [index]: e.target.value }))}
-                      />
-                      <Target className="absolute right-2 top-1.5 w-3.5 h-3.5 text-gray-300" />
+                {/* Apply Image */}
+                {beat.imageUrl && (
+                  <div className="space-y-1.5 pt-2 border-t">
+                    <div className="flex items-center gap-1">
+                      <ImageIcon className="w-3 h-3 text-gray-400" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase">Apply Image</span>
                     </div>
-                    <Button
-                      size="sm"
-                      className="h-7 px-2 bg-black hover:bg-gray-800"
-                      onClick={() => handleManualApply(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', index)}
-                      disabled={!beat.imageUrl && !beat.videoUrl}
-                    >
-                      <Send className="w-3 h-3" />
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-[10px] bg-black hover:bg-gray-800"
+                        onClick={() => onApplyToSlide(beat.imageUrl!, 'image', [beat.slideIds[0]])}
+                      >
+                        First Slide
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 text-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-black"
+                        onClick={() => onApplyToSlide(beat.imageUrl!, 'image', [slides[currentSlideIndex].id])}
+                      >
+                        Current Slide
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Input
+                          placeholder="Slide #"
+                          className="h-7 text-[10px] pr-8 focus-visible:ring-black"
+                          value={manualInputs[`img-${index}`] || ''}
+                          onChange={(e) => setManualInputs(prev => ({ ...prev, [`img-${index}`]: e.target.value }))}
+                        />
+                        <Target className="absolute right-2 top-1.5 w-3.5 h-3.5 text-gray-300" />
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 bg-black hover:bg-gray-800"
+                        onClick={() => {
+                          const input = manualInputs[`img-${index}`];
+                          if (!input) { toast.error('Enter a slide number'); return; }
+                          const slideNum = parseInt(input);
+                          if (isNaN(slideNum) || slideNum < 1 || slideNum > slides.length) { toast.error(`Invalid slide (1-${slides.length})`); return; }
+                          onApplyToSlide(beat.imageUrl!, 'image', [slides[slideNum - 1].id]);
+                          toast.success(`Image applied to slide ${slideNum}`);
+                        }}
+                      >
+                        <Send className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Apply Video */}
+                {beat.videoUrl && (
+                  <div className="space-y-1.5 pt-2 border-t">
+                    <div className="flex items-center gap-1">
+                      <Video className="w-3 h-3 text-gray-400" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase">Apply Video</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-[10px] bg-black hover:bg-gray-800"
+                        onClick={() => onApplyToSlide(beat.videoUrl!, 'video', [beat.slideIds[0]])}
+                      >
+                        First Slide
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 text-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-black"
+                        onClick={() => onApplyToSlide(beat.videoUrl!, 'video', [slides[currentSlideIndex].id])}
+                      >
+                        Current Slide
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Input
+                          placeholder="Slide #"
+                          className="h-7 text-[10px] pr-8 focus-visible:ring-black"
+                          value={manualInputs[`vid-${index}`] || ''}
+                          onChange={(e) => setManualInputs(prev => ({ ...prev, [`vid-${index}`]: e.target.value }))}
+                        />
+                        <Target className="absolute right-2 top-1.5 w-3.5 h-3.5 text-gray-300" />
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 bg-black hover:bg-gray-800"
+                        onClick={() => {
+                          const input = manualInputs[`vid-${index}`];
+                          if (!input) { toast.error('Enter a slide number'); return; }
+                          const slideNum = parseInt(input);
+                          if (isNaN(slideNum) || slideNum < 1 || slideNum > slides.length) { toast.error(`Invalid slide (1-${slides.length})`); return; }
+                          onApplyToSlide(beat.videoUrl!, 'video', [slides[slideNum - 1].id]);
+                          toast.success(`Video applied to slide ${slideNum}`);
+                        }}
+                      >
+                        <Send className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))

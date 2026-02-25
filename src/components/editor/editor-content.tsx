@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Home, Zap, Loader2 } from 'lucide-react';
+import { ArrowLeft, Home, Zap, Loader2, BarChart3, X } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProject, useUpdateProject, useUpdateSlides } from '@/hooks/use-project';
 import { StepIndicator } from './step-indicator';
@@ -79,6 +80,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const [pipelineStage, setPipelineStage] = useState<'analyzing' | 'imaging' | 'motion' | 'finishing'>('analyzing');
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [showEmotionalBeats, setShowEmotionalBeats] = useState(false);
+  const [showPreviewAll, setShowPreviewAll] = useState(false);
   const autoPipelineRunningRef = useRef(false);
 
   useEffect(() => {
@@ -182,7 +184,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               const newSlide = { ...slide };
               if (type === 'image') {
                 newSlide.hasBackgroundImage = true;
-                newSlide.backgroundVideoUrl = undefined;
+                newSlide.backgroundVideoUrl = null as any;
                 newSlide.backgroundImage = {
                   url,
                   opacity: 60,
@@ -193,7 +195,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               } else {
                 newSlide.backgroundVideoUrl = url;
                 newSlide.hasBackgroundImage = false;
-                newSlide.backgroundImage = undefined;
+                newSlide.backgroundImage = null as any;
                 newSlide.style = { ...newSlide.style, background: 'video', textColor: 'white' };
               }
               return newSlide;
@@ -219,7 +221,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               const updates: Record<string, any> = {};
               if (type === 'image') {
                 updates.hasBackgroundImage = true;
-                updates.backgroundVideoUrl = undefined;
+                updates.backgroundVideoUrl = null;
                 updates.backgroundImage = {
                   url,
                   opacity: 60,
@@ -230,7 +232,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               } else {
                 updates.backgroundVideoUrl = url;
                 updates.hasBackgroundImage = false;
-                updates.backgroundImage = undefined;
+                updates.backgroundImage = null;
                 updates.style = { ...slide.style, background: 'video', textColor: 'white' };
               }
               // Use RPC for efficient JSONB merge (avoids reading/writing full data blob)
@@ -700,6 +702,8 @@ export function EditorContent({ projectId }: EditorContentProps) {
               savedInfographicVideos={project.infographic_videos}
               onToggleEmotionalBeats={() => setShowEmotionalBeats(prev => !prev)}
               showEmotionalBeats={showEmotionalBeats}
+              onTogglePreview={() => setShowPreviewAll(prev => !prev)}
+              showPreviewAll={showPreviewAll}
             />
           )}
           {currentStep === 3 && (
@@ -728,33 +732,137 @@ export function EditorContent({ projectId }: EditorContentProps) {
             />
           )}
         </main>
-        
-        {/* Right Sidebar - Emotional Beats (always rendered when editing for smooth slide animation) */}
-        {isEditingSlide && (
-          <div
-            className="fixed right-0 top-14 h-[calc(100vh-3.5rem)] z-40 transition-transform duration-300 ease-in-out"
-            style={{ transform: showEmotionalBeats ? 'translateX(0)' : 'translateX(100%)' }}
-          >
-            <EmotionalBeatsSidebar
-                projectId={projectId}
-                emotionalBeats={emotionalBeats}
-                originalScript={project.original_script || ''}
-                slides={project.slides}
-                currentSlideIndex={currentSlideIndex}
-                onApplyToSlide={handleApplyToSlide}
-                onGoToSlide={(slideId) => {
-                  const slideIndex = project.slides.findIndex(s => s.id === slideId);
-                  if (slideIndex !== -1) {
-                    setInitialSlideIndex(slideIndex);
-                    setAutoEdit(false);
-                    setStep(2);
-                    setForceSlideView(true);
-                  }
-                }}
-            />
-          </div>
-        )}
       </div>
+
+      {/* Left Sidebar - Project Overview (rendered via portal to document.body) */}
+      {isEditingSlide && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed left-0 top-14 bottom-0 w-[320px] z-50 transition-transform duration-300 ease-in-out"
+          style={{ transform: showPreviewAll ? 'translateX(0)' : 'translateX(-100%)' }}
+        >
+          <div className="w-full h-full bg-white border-r border-gray-200 shadow-xl flex flex-col">
+            <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white shrink-0">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-black" />
+                <span className="font-bold text-sm text-black uppercase tracking-wide">Overview</span>
+                <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-500">{project.slides.length}</span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowPreviewAll(false)}>
+                <X className="w-4 h-4 text-gray-500 hover:text-black" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 thin-scrollbar bg-gray-50/30">
+              <div className="grid grid-cols-1 gap-4">
+                {project.slides
+                  .filter((s) => {
+                    const isAbsorbed = project.slides.some(ps => ps.absorbedSlideIds?.includes(s.id));
+                    return !isAbsorbed;
+                  })
+                  .map((s, idx) => {
+                    const originalIndex = project.slides.findIndex(as => as.id === s.id);
+                    return (
+                      <button
+                        key={`${s.id}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setInitialSlideIndex(originalIndex);
+                          setAutoEdit(true);
+                          setStep(2);
+                          setForceSlideView(true);
+                        }}
+                        className={`relative aspect-video w-full rounded-lg border overflow-hidden bg-white group cursor-pointer transition-all hover:ring-2 hover:ring-black/20 ${
+                          originalIndex === currentSlideIndex ? 'ring-2 ring-black shadow-md' : 'border-gray-200 shadow-sm'
+                        }`}
+                      >
+                        <div className="absolute inset-0 scale-[0.25] origin-top-left w-[400%] h-[400%] pointer-events-none select-none">
+                          <div
+                            className="w-full h-full relative"
+                            style={{
+                              background: s.style.background === 'gradient' && s.style.gradient
+                                ? s.style.gradient
+                                : s.style.background === 'dark' || s.style.background === 'video' || s.backgroundVideoUrl
+                                  ? '#1a1a1a'
+                                  : s.style.background === 'image' && s.hasBackgroundImage
+                                    ? '#1a1a1a'
+                                    : '#ffffff',
+                            }}
+                          >
+                            {s.backgroundVideoUrl && (
+                              <video
+                                src={s.backgroundVideoUrl}
+                                className="absolute inset-0 w-full h-full object-cover"
+                                muted
+                                playsInline
+                                preload="metadata"
+                              />
+                            )}
+                            {s.hasBackgroundImage && s.backgroundImage?.url && (
+                              <div
+                                className="absolute inset-0 bg-cover bg-center"
+                                style={{ backgroundImage: `url(${s.backgroundImage.url})`, opacity: 0.6 }}
+                              />
+                            )}
+                            {s.style.background === 'split' && s.backgroundImage?.url && (
+                              <div
+                                className="absolute top-0 left-0 right-0 bg-cover bg-center"
+                                style={{
+                                  height: `${s.style.splitRatio || 50}%`,
+                                  backgroundImage: `url(${s.backgroundImage.url})`
+                                }}
+                              />
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center p-12">
+                              <div className="text-[60px] font-bold text-center leading-tight truncate-3-lines px-8" style={{ color: s.style.textColor === 'white' ? 'white' : 'black' }}>
+                                {s.fullScriptText.length > 60 ? s.fullScriptText.slice(0, 60) + '...' : s.fullScriptText}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="absolute top-2 left-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-bold shadow-sm backdrop-blur-sm">
+                          {originalIndex + 1}
+                        </div>
+                        {originalIndex === currentSlideIndex && (
+                          <div className="absolute inset-0 bg-black/5 flex items-center justify-center pointer-events-none border-2 border-black rounded-lg" />
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+              <p className="mt-4 text-[10px] text-gray-400 text-center leading-relaxed px-4">
+                Click any slide to jump to it.
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Right Sidebar - Emotional Beats (rendered via portal to document.body) */}
+      {isEditingSlide && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed right-0 top-14 h-[calc(100vh-3.5rem)] z-40 transition-transform duration-300 ease-in-out"
+          style={{ transform: showEmotionalBeats ? 'translateX(0)' : 'translateX(100%)' }}
+        >
+          <EmotionalBeatsSidebar
+              projectId={projectId}
+              emotionalBeats={emotionalBeats}
+              originalScript={project.original_script || ''}
+              slides={project.slides}
+              currentSlideIndex={currentSlideIndex}
+              onApplyToSlide={handleApplyToSlide}
+              onGoToSlide={(slideId) => {
+                const slideIndex = project.slides.findIndex(s => s.id === slideId);
+                if (slideIndex !== -1) {
+                  setInitialSlideIndex(slideIndex);
+                  setAutoEdit(false);
+                  setStep(2);
+                  setForceSlideView(true);
+                }
+              }}
+          />
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

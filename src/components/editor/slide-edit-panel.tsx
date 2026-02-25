@@ -57,6 +57,8 @@ interface SlideEditPanelProps {
   canGoPrevious?: boolean;
   onToggleEmotionalBeats?: () => void;
   showEmotionalBeats?: boolean;
+  onTogglePreview?: () => void;
+  showPreviewAll?: boolean;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -258,12 +260,13 @@ export function SlideEditPanel({
   canGoPrevious = false,
   onToggleEmotionalBeats,
   showEmotionalBeats = false,
+  onTogglePreview,
+  showPreviewAll = false,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
   const [textValue, setTextValue] = useState('');
   const [applyToAll, setApplyToAll] = useState(false);
-  const [showPreviewAll, setShowPreviewAll] = useState(false);
   const [aiImageOpen, setAiImageOpen] = useState(false);
   const [fetchingImage, setFetchingImage] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState('');
@@ -740,123 +743,8 @@ export function SlideEditPanel({
 
   return (
     <>
-      {/* Project Overview Sidebar (Left Side - Fixed Overlay with smooth slide) */}
-      {allSlides && (
-        <div
-          className="fixed left-0 top-14 bottom-0 w-[320px] z-50 transition-transform duration-300 ease-in-out"
-          style={{ transform: showPreviewAll ? 'translateX(0)' : 'translateX(-100%)' }}
-        >
-        <div className="w-full h-full bg-white border-r border-gray-200 shadow-xl flex flex-col">
-          {/* Sidebar Header */}
-          <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white shrink-0">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-black" />
-              <span className="font-bold text-sm text-black uppercase tracking-wide">Overview</span>
-              <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-bold text-gray-500">{allSlides.length}</span>
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => setShowPreviewAll(false)}>
-              <X className="w-4 h-4 text-gray-500 hover:text-black" />
-            </Button>
-          </div>
 
-          {/* Slides Grid */}
-          <div className="flex-1 overflow-y-auto p-4 thin-scrollbar bg-gray-50/30">
-            <div className="grid grid-cols-1 gap-4">
-              {allSlides
-                .filter((s: Slide) => {
-                  const isAbsorbed = allSlides.some(ps => ps.absorbedSlideIds?.includes(s.id));
-                  return !isAbsorbed;
-                })
-                .map((s: Slide, idx: number) => {
-                  const originalIndex = allSlides.findIndex(as => as.id === s.id);
-                  const previewSlide = (applyToAll && originalIndex > currentIndex) 
-                    ? { 
-                        ...s, 
-                        style: { ...slide.style }, 
-                        hasBackgroundImage: slide.hasBackgroundImage,
-                        backgroundImage: slide.backgroundImage,
-                        headshot: slide.headshot,
-                        isInfographic: slide.isInfographic,
-                        infographicVisual: slide.infographicVisual,
-                        infographicCaptions: s.infographicCaptions || [s.fullScriptText]
-                      } 
-                    : (originalIndex === currentIndex ? slide : s);
-
-                  return (
-                    <button 
-                      key={`${s.id}-${idx}`} 
-                      type="button"
-                      onClick={() => onJumpToSlide?.(originalIndex)}
-                      className={`relative aspect-video w-full rounded-lg border overflow-hidden bg-white group cursor-pointer transition-all hover:ring-2 hover:ring-black/20 ${
-                        originalIndex === currentIndex ? 'ring-2 ring-black shadow-md' : 'border-gray-200 shadow-sm'
-                      }`}
-                    >
-                      <div className="absolute inset-0 scale-[0.25] origin-top-left w-[400%] h-[400%] pointer-events-none select-none">
-                        <div
-                          className="w-full h-full relative"
-                          style={{
-                            background: previewSlide.style.background === 'gradient' && previewSlide.style.gradient
-                              ? previewSlide.style.gradient
-                              : previewSlide.style.background === 'dark' || previewSlide.style.background === 'video' || previewSlide.backgroundVideoUrl
-                                ? '#1a1a1a'
-                                : previewSlide.style.background === 'image' && previewSlide.hasBackgroundImage
-                                  ? '#1a1a1a'
-                                  : '#ffffff',
-                          }}
-                        >
-                          {previewSlide.backgroundVideoUrl && (
-                            <video
-                              src={previewSlide.backgroundVideoUrl}
-                              className="absolute inset-0 w-full h-full object-cover"
-                              muted
-                              playsInline
-                              preload="metadata"
-                            />
-                          )}
-                          {previewSlide.hasBackgroundImage && previewSlide.backgroundImage?.url && (
-                            <div 
-                              className="absolute inset-0 bg-cover bg-center"
-                              style={{ backgroundImage: `url(${previewSlide.backgroundImage.url})`, opacity: 0.6 }}
-                            />
-                          )}
-                          {previewSlide.style.background === 'split' && previewSlide.backgroundImage?.url && (
-                             <div 
-                              className="absolute top-0 left-0 right-0 bg-cover bg-center"
-                              style={{ 
-                                height: `${previewSlide.style.splitRatio || 50}%`,
-                                backgroundImage: `url(${previewSlide.backgroundImage.url})` 
-                              }}
-                            />
-                          )}
-                          
-                          <div className="absolute inset-0 flex items-center justify-center p-12">
-                            <div className="text-[60px] font-bold text-center leading-tight truncate-3-lines px-8" style={{ color: previewSlide.style.textColor === 'white' ? 'white' : 'black' }}>
-                              {previewSlide.fullScriptText.length > 60 ? previewSlide.fullScriptText.slice(0, 60) + '...' : previewSlide.fullScriptText}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="absolute top-2 left-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-bold shadow-sm backdrop-blur-sm">
-                        {originalIndex + 1}
-                      </div>
-                      {originalIndex === currentIndex && (
-                        <div className="absolute inset-0 bg-black/5 flex items-center justify-center pointer-events-none border-2 border-black rounded-lg">
-                          {/* Active Indicator */}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-            </div>
-            <p className="mt-4 text-[10px] text-gray-400 text-center leading-relaxed px-4">
-              Click any slide to jump to it. Styling changes applied to all remaining slides will be previewed here.
-            </p>
-          </div>
-        </div>
-        </div>
-      )}
-
-      {/* Main Editor Card (Fixed: Removed the left margin shift) */}
+      {/* Main Editor Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
         
         {/* Save/Cancel + Navigation — top of panel */}
@@ -869,7 +757,7 @@ export function SlideEditPanel({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowPreviewAll(!showPreviewAll)}
+                onClick={onTogglePreview}
                 className={`gap-1.5 h-7 text-[10px] px-2 uppercase tracking-wider font-bold ${showPreviewAll ? 'bg-black text-white hover:bg-black/90' : 'border-gray-200 text-gray-500'}`}
               >
                 <BarChart3 className="w-3 h-3" />

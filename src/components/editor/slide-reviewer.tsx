@@ -26,6 +26,8 @@ interface SlideReviewerProps {
   savedInfographicVideos?: Record<string, { uri: string; data?: string }>;
   onToggleEmotionalBeats?: () => void;
   showEmotionalBeats?: boolean;
+  onTogglePreview?: () => void;
+  showPreviewAll?: boolean;
 }
 
 const UNDERLINE_CYCLE: UnderlineStyle[] = [
@@ -155,6 +157,8 @@ export function SlideReviewer({
   savedInfographicVideos,
   onToggleEmotionalBeats,
   showEmotionalBeats,
+  onTogglePreview,
+  showPreviewAll,
 }: SlideReviewerProps) {
   const [slides, setSlides] = useState<Slide[]>(initialSlides);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -824,6 +828,8 @@ export function SlideReviewer({
               }}
               onToggleEmotionalBeats={onToggleEmotionalBeats}
               showEmotionalBeats={showEmotionalBeats}
+              onTogglePreview={onTogglePreview}
+              showPreviewAll={showPreviewAll}
             />
           </div>
         </div>
