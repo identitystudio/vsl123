@@ -729,25 +729,30 @@ export function EditorContent({ projectId }: EditorContentProps) {
           )}
         </main>
         
-        {/* Right Sidebar - Emotional Beats */}
-        {isEditingSlide && showEmotionalBeats && (
-          <EmotionalBeatsSidebar
-              projectId={projectId}
-              emotionalBeats={emotionalBeats}
-              originalScript={project.original_script || ''}
-              slides={project.slides}
-              currentSlideIndex={currentSlideIndex}
-              onApplyToSlide={handleApplyToSlide}
-              onGoToSlide={(slideId) => {
-                const slideIndex = project.slides.findIndex(s => s.id === slideId);
-                if (slideIndex !== -1) {
-                  setInitialSlideIndex(slideIndex);
-                  setAutoEdit(false);
-                  setStep(2);
-                  setForceSlideView(true);
-                }
-              }}
-          />
+        {/* Right Sidebar - Emotional Beats (always rendered when editing for smooth slide animation) */}
+        {isEditingSlide && (
+          <div
+            className="fixed right-0 top-14 h-[calc(100vh-3.5rem)] z-40 transition-transform duration-300 ease-in-out"
+            style={{ transform: showEmotionalBeats ? 'translateX(0)' : 'translateX(100%)' }}
+          >
+            <EmotionalBeatsSidebar
+                projectId={projectId}
+                emotionalBeats={emotionalBeats}
+                originalScript={project.original_script || ''}
+                slides={project.slides}
+                currentSlideIndex={currentSlideIndex}
+                onApplyToSlide={handleApplyToSlide}
+                onGoToSlide={(slideId) => {
+                  const slideIndex = project.slides.findIndex(s => s.id === slideId);
+                  if (slideIndex !== -1) {
+                    setInitialSlideIndex(slideIndex);
+                    setAutoEdit(false);
+                    setStep(2);
+                    setForceSlideView(true);
+                  }
+                }}
+            />
+          </div>
         )}
       </div>
     </div>

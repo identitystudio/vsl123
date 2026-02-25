@@ -231,7 +231,7 @@ export function EmotionalBeatsSidebar({
 
   if (!isOpen) {
     return (
-      <div className="fixed right-0 top-14 w-12 border-l border-gray-200 bg-white flex flex-col items-center py-4 gap-4 h-[calc(100vh-3.5rem)] z-40">
+      <div className="w-12 border-l border-gray-200 bg-white flex flex-col items-center py-4 gap-4 h-full">
         <Button variant="ghost" size="icon" onClick={() => setIsOpen(true)} className="text-black">
           <ChevronLeft className="w-5 h-5" />
         </Button>
@@ -246,7 +246,7 @@ export function EmotionalBeatsSidebar({
   }
 
   return (
-    <div className="fixed right-0 top-14 w-[450px] border-l border-gray-200 bg-white flex flex-col h-[calc(100vh-3.5rem)] z-40 shadow-xl overflow-hidden">
+    <div className="w-[450px] border-l border-gray-200 bg-white flex flex-col h-full shadow-xl overflow-hidden">
       <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white">
         <div className="flex items-center gap-2">
           <Heart className="w-4 h-4 text-black" />

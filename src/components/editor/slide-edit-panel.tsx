@@ -740,9 +740,13 @@ export function SlideEditPanel({
 
   return (
     <>
-      {/* Project Overview Sidebar (Left Side - Fixed Overlay) */}
-      {showPreviewAll && allSlides && (
-        <div className="fixed left-0 top-14 bottom-0 w-[320px] bg-white border-r border-gray-200 shadow-xl z-50 flex flex-col animate-in slide-in-from-left duration-300">
+      {/* Project Overview Sidebar (Left Side - Fixed Overlay with smooth slide) */}
+      {allSlides && (
+        <div
+          className="fixed left-0 top-14 bottom-0 w-[320px] z-50 transition-transform duration-300 ease-in-out"
+          style={{ transform: showPreviewAll ? 'translateX(0)' : 'translateX(-100%)' }}
+        >
+        <div className="w-full h-full bg-white border-r border-gray-200 shadow-xl flex flex-col">
           {/* Sidebar Header */}
           <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white shrink-0">
             <div className="flex items-center gap-2">
@@ -793,9 +797,22 @@ export function SlideEditPanel({
                           style={{
                             background: previewSlide.style.background === 'gradient' && previewSlide.style.gradient
                               ? previewSlide.style.gradient
-                              : previewSlide.style.background === 'dark' ? '#1a1a1a' : '#ffffff',
+                              : previewSlide.style.background === 'dark' || previewSlide.style.background === 'video' || previewSlide.backgroundVideoUrl
+                                ? '#1a1a1a'
+                                : previewSlide.style.background === 'image' && previewSlide.hasBackgroundImage
+                                  ? '#1a1a1a'
+                                  : '#ffffff',
                           }}
                         >
+                          {previewSlide.backgroundVideoUrl && (
+                            <video
+                              src={previewSlide.backgroundVideoUrl}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              muted
+                              playsInline
+                              preload="metadata"
+                            />
+                          )}
                           {previewSlide.hasBackgroundImage && previewSlide.backgroundImage?.url && (
                             <div 
                               className="absolute inset-0 bg-cover bg-center"
@@ -835,6 +852,7 @@ export function SlideEditPanel({
               Click any slide to jump to it. Styling changes applied to all remaining slides will be previewed here.
             </p>
           </div>
+        </div>
         </div>
       )}
 
