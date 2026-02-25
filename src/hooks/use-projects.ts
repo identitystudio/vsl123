@@ -1,12 +1,12 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { VslProject } from '@/types';
-import type { User } from '@supabase/supabase-js';
 
 const supabase = createClient();
+const PAGE_SIZE = 9;
 
 export function useProjects(initialUserId?: string) {
   const queryClient = useQueryClient();
@@ -14,23 +14,17 @@ export function useProjects(initialUserId?: string) {
   const [isAuthLoading, setIsAuthLoading] = useState(!initialUserId);
 
   useEffect(() => {
-    // 1. Get current session immediately
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentId = session?.user?.id ?? null;
-      // Only update if different or initial was missing
-      if (currentId !== userId) {
-        setUserId(currentId);
-      }
+      if (currentId !== userId) setUserId(currentId);
       setIsAuthLoading(false);
     });
 
-    // 2. Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const newUserId = session?.user?.id ?? null;
       setUserId(newUserId);
       setIsAuthLoading(false);
 
-      // Invalidate projects on any auth change to be safe
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         queryClient.invalidateQueries({ queryKey: ['projects'] });
       }
@@ -39,49 +33,61 @@ export function useProjects(initialUserId?: string) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [queryClient, userId]); // Include userId in dep array to check against updates
+  }, [queryClient, userId]);
 
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: ['projects', userId],
     enabled: !!userId,
-    queryFn: async () => {
-      // Security Check: ensure client SDK has the session ready
+    initialPageParam: 0,
+    queryFn: async ({ pageParam = 0 }) => {
+      // 1. Session check to avoid RLS race conditions
       const { data: { session } } = await supabase.auth.getSession();
-      
-      // If session isn't ready or doesn't match the requested user, 
-      // throw to trigger retry instead of returning empty list (RLS failure)
       if (!session || (userId && session.user.id !== userId)) {
         throw new Error('Session not synchronized yet');
       }
 
+      // 2. Optimized Fetch: Only select what's needed for the dashboard cards.
+      // We skip 'original_script', 'emotional_beats', and the full 'slides' jsonb blob.
       const { data, error } = await supabase
         .from('vsl_projects')
         .select(`
-          *,
+          id, 
+          name, 
+          updated_at, 
+          settings, 
+          infographic_images,
           slide_count:slides(count)
         `)
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: false })
+        .range(pageParam, pageParam + PAGE_SIZE - 1);
 
       if (error) throw error;
       
       const projects = (data || []).map(p => ({
         ...p,
+        // Map the count from the join
         slides: { length: p.slide_count?.[0]?.count || 0 }
       }));
 
       return projects as unknown as VslProject[];
     },
-    // Performance optimizations
-    staleTime: 2 * 60 * 1000,           // 2 minutes - dashboard doesn't need real-time updates
-    gcTime: 10 * 60 * 1000,             // 10 minutes - keep in memory
-    refetchOnWindowFocus: false,        // Don't refetch when user switches tabs
-    refetchOnReconnect: false,          // Don't refetch on reconnect
-    retry: 1,                           // Retry once on failure
+    getNextPageParam: (lastPage, allPages) => {
+      // If the last page was smaller than the page size, there are no more projects
+      return lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE;
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
+
+  // Flatten the pages for easy UI consumption, matching the old signature
+  const projects = query.data?.pages.flat() || [];
 
   return {
     ...query,
-    // Loading if auth is still resolving OR query is pending
+    data: projects,
+    // Maintain old loading prop name for compatibility
     isInitialLoading: isAuthLoading || (!!userId && query.isPending && !query.data),
   };
 }

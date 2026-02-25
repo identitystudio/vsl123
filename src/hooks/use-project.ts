@@ -10,36 +10,25 @@ export function useProject(projectId: string) {
   return useQuery({
     queryKey: ['project', projectId],
     queryFn: async () => {
-      // 1. Fetch project meta
-      const { data: project, error: projectError } = await supabase
-        .from('vsl_projects')
-        .select('*')
-        .eq('id', projectId)
-        .maybeSingle();
+      // Parallelize fetches for maximum speed
+      const [projectRes, slidesRes] = await Promise.all([
+        supabase.from('vsl_projects').select('*').eq('id', projectId).maybeSingle(),
+        supabase.from('slides').select('*').eq('project_id', projectId).order('order_index', { ascending: true })
+      ]);
 
-      if (projectError) throw projectError;
+      if (projectRes.error) throw projectRes.error;
+      if (slidesRes.error) throw slidesRes.error;
 
-      if (!project) {
-        return null;
-      }
+      if (!projectRes.data) return null;
 
-      // 2. Fetch slides from the separate table
-      const { data: slides, error: slidesError } = await supabase
-        .from('slides')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('order_index', { ascending: true }); 
-
-      if (slidesError) throw slidesError;
-
-      // Map DB slides to the format the UI expects
-      const formattedSlides = (slides || []).map((s) => ({
+      // Map DB slides to UI format
+      const formattedSlides = (slidesRes.data || []).map((s) => ({
         ...s.data,
-        id: s.id, // Use the DB UUID as the slide ID
+        id: s.id,
       }));
 
       return {
-        ...project,
+        ...projectRes.data,
         slides: formattedSlides,
       } as unknown as VslProject;
     },
@@ -250,10 +239,17 @@ export function useUpdateSingleSlide() {
       }
     },
     onSuccess: (data: any, variables, context: any) => {
-      // Use the project ID from context or from returned data
       const projectId = context?.targetProjectId || data?.project_id;
       if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        // Update local cache manually instead of invalidating
+        queryClient.setQueryData(['project', projectId], (old: VslProject | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            slides: old.slides.map(s => s.id === variables.slideId ? { ...s, ...variables.updates } : s)
+          };
+        });
+        // We still invalidate the list view but not the individual project
         queryClient.invalidateQueries({ queryKey: ['projects'] });
       }
     },
@@ -282,7 +278,12 @@ export function useUpdateSettings() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project', data.id] });
+      // Update local cache manually
+      queryClient.setQueryData(['project', data.id], (old: VslProject | undefined) => {
+        if (!old) return old;
+        return { ...old, settings: data.settings };
+      });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 }

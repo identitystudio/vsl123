@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { useUpdateProject } from '@/hooks/use-project';
+import { useProject, useUpdateProject } from '@/hooks/use-project';
 import type { Slide, SlideStyle, TextSegment, BackgroundImage, InfographicVisual, ImageGenerationTheme } from '@/types';
 import { toast } from 'sonner';
 import { ThemeSelectionDialog } from './theme-selection-dialog';
@@ -21,7 +21,7 @@ interface ScriptInputProps {
   initialScript: string;
   onSlidesGenerated: (
     slides: Slide[],
-    options?: { autoPipeline?: boolean; originalScript?: string }
+    options?: { autoPipeline?: boolean; originalScript?: string; theme?: ImageGenerationTheme }
   ) => Promise<void> | void;
 }
 
@@ -385,6 +385,7 @@ export function ScriptInput({
   const [showOptions, setShowOptions] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [selectedImageTheme, setSelectedImageTheme] = useState<ImageGenerationTheme>('realism');
+  const { data: project } = useProject(projectId);
   const updateProject = useUpdateProject();
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -427,6 +428,23 @@ export function ScriptInput({
   const handleThemeSelectedAndGenerate = async (theme: ImageGenerationTheme) => {
     setShowThemeDialog(false);
     setSelectedImageTheme(theme); // persisted so ThemeSelectionDialog can default to last choice
+
+    // Save theme to project settings
+    const currentSettings = project?.settings || {
+      theme: 'dark',
+      textSize: 84,
+      textAlignment: 'center',
+    };
+
+    await updateProject.mutateAsync({
+      projectId,
+      updates: { 
+        settings: {
+          ...currentSettings,
+          imageTheme: theme,
+        },
+      },
+    });
 
     setGenerating(true);
     setProgress(5);
@@ -915,6 +933,7 @@ export function ScriptInput({
       await onSlidesGenerated(styledSlides, {
         autoPipeline: true,
         originalScript: script,
+        theme: selectedImageTheme,
       });
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message === 'AbortError') {

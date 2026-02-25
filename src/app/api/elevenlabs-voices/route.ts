@@ -11,18 +11,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log(`ElevenLabs Voices check: Key length ${apiKey.length}`);
+
     const response = await fetch('https://api.elevenlabs.io/v1/voices', {
       headers: {
-        'xi-api-key': apiKey,
+        'xi-api-key': apiKey.trim(),
       },
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const message = errorData.error?.message || errorData.detail || 'Invalid API key or ElevenLabs error';
+      const message = errorData.error?.message || errorData.detail || 'ElevenLabs error';
       return NextResponse.json(
         { error: message, code: errorData.error?.status },
-        { status: 401 }
+        { status: response.status }
       );
     }
 

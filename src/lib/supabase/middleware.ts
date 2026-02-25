@@ -8,6 +8,11 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -25,9 +30,14 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  const start = Date.now();
+  console.log(`📡 [Middleware] Start for ${request.nextUrl.pathname}`);
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  console.log(`⏱️ [Middleware] getUser finished in ${Date.now() - start}ms for ${request.nextUrl.pathname}`);
 
   // Protected routes — redirect to login if not authenticated
   const isProtectedRoute =

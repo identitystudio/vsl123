@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mic, ExternalLink, Eye, EyeOff, SkipForward } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Button } from '@/components/ui/button';
@@ -59,74 +59,165 @@ export function AudioSetup({
     burst();
   }, []);
 
-  // Fetch subscription info when connected
+  // Track keys that have failed to prevent auto-connect loops across re-renders
+  const failedKeysRef = useRef<Set<string>>(new Set());
+  const activeConnectionRef = useRef<string | null>(null);
+
+  // Auto-connect if key exists in settings (runs on mount)
   useEffect(() => {
-    if (!connected || !apiKey) return;
-
-    const fetchSubInfo = async () => {
-      try {
-        const response = await fetch('/api/elevenlabs-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey }),
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setSubInfo(data);
-        }
-      } catch (err) {
-        console.error('Passive subscription info fetch failed:', err);
-      }
-    };
-
-    fetchSubInfo();
-  }, [connected, apiKey]);
-
-  const handleConnect = async () => {
-    if (!apiKey.trim()) {
-      toast.error('Please enter your ElevenLabs API key');
-      return;
+    const savedKey = settings.audio?.elevenLabsApiKey;
+    if (savedKey && !connected && !loadingVoices && activeConnectionRef.current !== savedKey && !failedKeysRef.current.has(savedKey)) {
+      handleConnect(savedKey);
     }
+  }, [settings.audio?.elevenLabsApiKey, connected]);
 
+  const handleConnect = async (targetKey?: string) => {
+    const rawKey = targetKey || apiKey;
+    const keyToUse = rawKey?.trim();
+    
+    if (!keyToUse || keyToUse.length < 10) return;
+    if (activeConnectionRef.current === keyToUse && connected) return;
+
+    activeConnectionRef.current = keyToUse;
     setLoadingVoices(true);
+    
     try {
-      const response = await fetch('/api/elevenlabs-voices', {
+      // 1. Fetch Voices (This is the critical part for functionality)
+      const voiceRes = await fetch('/api/elevenlabs-voices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey }),
+        body: JSON.stringify({ apiKey: keyToUse }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Invalid API key');
+      if (!voiceRes.ok) {
+        const errorData = await voiceRes.json().catch(() => ({ error: 'Connection failed' }));
+        const errorMessage = errorData.error || `Error ${voiceRes.status}`;
+        
+        console.error(`ElevenLabs Voice Error [${voiceRes.status}]:`, errorMessage);
+        
+        if (voiceRes.status === 401) {
+          failedKeysRef.current.add(keyToUse);
+        }
+        throw new Error(errorMessage);
       }
 
-      const data = await response.json();
-      setVoices(data.voices || []);
-      
+      const voiceData = await voiceRes.json();
+      setVoices(voiceData.voices || []);
       setConnected(true);
 
-      // Save API key to settings
-      await updateSettings.mutateAsync({
-        projectId,
-        settings: {
-          ...settings,
-          audio: {
-            ...settings.audio,
-            elevenLabsApiKey: apiKey,
-            voiceId: settings.audio?.voiceId || '',
-            stability: settings.audio?.stability || 0.5,
-            similarityBoost: settings.audio?.similarityBoost || 0.75,
-            speed: settings.audio?.speed || 1.0,
-          },
-        },
-      });
+      // 2. Fetch Subscription Info (Non-blocking, helpful but not mandatory)
+      try {
+        const userRes = await fetch('/api/elevenlabs-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: keyToUse }),
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setSubInfo(userData);
+        }
+      } catch (userErr) {
+        console.warn('Could not fetch ElevenLabs subscription info:', userErr);
+      }
 
-      toast.success('Connected to ElevenLabs!');
+      // Only save to DB if this was a MANUAL keyboard entry from the user
+      if (!targetKey && keyToUse !== settings.audio?.elevenLabsApiKey) {
+        // ... mutation logic unchanged ...
+        await updateSettings.mutateAsync({
+          projectId,
+          settings: {
+            ...settings,
+            audio: {
+              ...settings.audio,
+              elevenLabsApiKey: keyToUse,
+              voiceId: settings.audio?.voiceId || '',
+              stability: settings.audio?.stability || 0.5,
+              similarityBoost: settings.audio?.similarityBoost || 0.75,
+              speed: settings.audio?.speed || 1.0,
+            },
+          },
+        });
+        toast.success('Connected to ElevenLabs!');
+      }
     } catch (err: any) {
-      toast.error(err.message || 'Failed to connect. Check your API key.');
+      console.error('handleConnect failed:', err);
+      activeConnectionRef.current = null;
+      setConnected(false);
+      
+      if (!targetKey) {
+        toast.error(err.message || 'Check your API key and connection');
+      }
     } finally {
       setLoadingVoices(false);
+    }
+  };
+
+  const processBatch = async (slidesToProcess: any[], label: string) => {
+    setGenerating(true);
+    setGeneratingProgress(0);
+    let completed = 0;
+    let failed = 0;
+    const batchSize = 2; // Safe concurrency for all ElevenLabs tiers
+    const total = slidesToProcess.length;
+
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = slidesToProcess.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (slide) => {
+        let retries = 0;
+        const maxRetries = 2;
+        while (retries <= maxRetries) {
+          try {
+            const response = await fetch('/api/elevenlabs-tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: slide.fullScriptText,
+                voiceId: selectedVoice,
+                apiKey,
+                stability: 0.5,
+                similarityBoost: 0.75,
+                speed: 1.0,
+              }),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              await updateSingleSlide.mutateAsync({
+                slideId: slide.id,
+                updates: {
+                  audioUrl: data.audioContent,
+                  audioDuration: data.duration,
+                  audioGenerated: true,
+                },
+              });
+              break;
+            } else {
+              const err = await response.json().catch(() => ({}));
+              if (response.status === 429 || (err.error && err.error.toLowerCase().includes('concurrent'))) {
+                const wait = (retries + 1) * 2000;
+                await new Promise(r => setTimeout(r, wait));
+                retries++;
+                continue;
+              }
+              console.warn(`TTS failed for ${slide.id}:`, err.error || response.statusText);
+              failed++;
+              break;
+            }
+          } catch (err) {
+            if (retries === maxRetries) failed++;
+            retries++;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+        completed++;
+        setGeneratingProgress(Math.round((completed / total) * 100));
+      }));
+    }
+    setGenerating(false);
+    if (failed > 0) {
+      toast.error(`${label} complete with ${failed} failures.`);
+    } else {
+      toast.success(`${label} successful!`);
     }
   };
 
@@ -135,43 +226,8 @@ export function AudioSetup({
       toast.error('Please select a voice first');
       return;
     }
-
     const slide = slides[index];
-    setGeneratingSlideId(slide.id);
-
-    try {
-      const response = await fetch('/api/elevenlabs-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: slide.fullScriptText,
-          voiceId: selectedVoice,
-          apiKey,
-          stability: 0.5,
-          similarityBoost: 0.75,
-          speed: 1.0,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        await updateSingleSlide.mutateAsync({
-          slideId: slide.id,
-          updates: {
-            audioUrl: data.audioContent,
-            audioDuration: data.duration,
-            audioGenerated: true,
-          },
-        });
-        toast.success(`Audio generated for slide ${index + 1}`);
-      } else {
-        throw new Error('TTS failed');
-      }
-    } catch (err) {
-      toast.error(`Failed to generate audio for slide ${index + 1}`);
-    } finally {
-      setGeneratingSlideId(null);
-    }
+    await processBatch([slide], `Audio for slide ${index + 1}`);
   };
 
   const handleGenerateRemaining = async () => {
@@ -179,56 +235,12 @@ export function AudioSetup({
       toast.error('Please select a voice first');
       return;
     }
-
-    setGenerating(true);
-    setGeneratingProgress(0);
-
     const slidesNeedingAudio = slides.filter(s => !s.audioGenerated);
     if (slidesNeedingAudio.length === 0) {
       toast.info('All slides already have audio!');
-      setGenerating(false);
       return;
     }
-
-    let completed = 0;
-
-    for (const slide of slidesNeedingAudio) {
-      const idx = slides.findIndex(s => s.id === slide.id);
-      try {
-        const response = await fetch('/api/elevenlabs-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: slide.fullScriptText,
-            voiceId: selectedVoice,
-            apiKey,
-            stability: 0.5,
-            similarityBoost: 0.75,
-            speed: 1.0,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          await updateSingleSlide.mutateAsync({
-            slideId: slide.id,
-            updates: {
-              audioUrl: data.audioContent,
-              audioDuration: data.duration,
-              audioGenerated: true,
-            },
-          });
-        }
-      } catch {
-        // Continue
-      }
-
-      completed++;
-      setGeneratingProgress(Math.round((completed / slidesNeedingAudio.length) * 100));
-    }
-
-    setGenerating(false);
-    toast.success('Remaining audio generated!');
+    await processBatch(slidesNeedingAudio, 'Remaining audio generation');
   };
 
   const handleGenerateRange = async () => {
@@ -236,61 +248,14 @@ export function AudioSetup({
       toast.error('Please select a voice first');
       return;
     }
-
     const start = parseInt(rangeStart);
     const end = parseInt(rangeEnd);
-
     if (isNaN(start) || isNaN(end) || start < 1 || end > slides.length || start > end) {
       toast.error('Invalid range. Please check slide numbers.');
       return;
     }
-
-    setGenerating(true);
-    setGeneratingProgress(0);
-
-    const rangeIndices = [];
-    for (let i = start - 1; i < end; i++) {
-      rangeIndices.push(i);
-    }
-
-    let completed = 0;
-    for (const idx of rangeIndices) {
-      const slide = slides[idx];
-      try {
-        const response = await fetch('/api/elevenlabs-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: slide.fullScriptText,
-            voiceId: selectedVoice,
-            apiKey,
-            stability: 0.5,
-            similarityBoost: 0.75,
-            speed: 1.0,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          await updateSingleSlide.mutateAsync({
-            slideId: slide.id,
-            updates: {
-              audioUrl: data.audioContent,
-              audioDuration: data.duration,
-              audioGenerated: true,
-            },
-          });
-        }
-      } catch {
-        // Continue
-      }
-
-      completed++;
-      setGeneratingProgress(Math.round((completed / rangeIndices.length) * 100));
-    }
-
-    setGenerating(false);
-    toast.success(`Audio generated for slides ${start} to ${end}!`);
+    const rangeSlides = slides.slice(start - 1, end);
+    await processBatch(rangeSlides, `Audio for slides ${start} to ${end}`);
   };
 
   const handleRegenerateAll = async () => {
@@ -298,53 +263,8 @@ export function AudioSetup({
       toast.error('Please select a voice first');
       return;
     }
-
-    if (!confirm('This will regenerate audio for ALL slides using the selected voice. This consumes credits. Continue?')) {
-      return;
-    }
-
-    setGenerating(true);
-    setGeneratingProgress(0);
-
-    let completed = 0;
-
-    for (const slide of slides) {
-      const idx = slides.findIndex(s => s.id === slide.id);
-      try {
-        const response = await fetch('/api/elevenlabs-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: slide.fullScriptText,
-            voiceId: selectedVoice,
-            apiKey,
-            stability: 0.5,
-            similarityBoost: 0.75,
-            speed: 1.0,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          await updateSingleSlide.mutateAsync({
-            slideId: slide.id,
-            updates: {
-              audioUrl: data.audioContent,
-              audioDuration: data.duration,
-              audioGenerated: true,
-            },
-          });
-        }
-      } catch {
-        // Continue
-      }
-
-      completed++;
-      setGeneratingProgress(Math.round((completed / slides.length) * 100));
-    }
-
-    setGenerating(false);
-    toast.success('All audio regenerated!');
+    if (!confirm('This will regenerate audio for ALL slides. Continue?')) return;
+    await processBatch(slides, 'Full audio regeneration');
   };
 
   const [voiceSearch, setVoiceSearch] = useState('');
@@ -582,23 +502,13 @@ export function AudioSetup({
 
         <h2 className="text-2xl font-bold">Add Voiceover</h2>
 
-        <a
-          href="https://elevenlabs.io/app/developers/api-keys"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full p-4 rounded-xl border border-gray-200 flex items-center justify-center gap-2 text-sm font-medium hover:bg-gray-50 transition-colors"
-        >
-          Get ElevenLabs API Key
-          <ExternalLink className="w-4 h-4" />
-        </a>
-
         <div className="w-full relative">
           <Input
             type={showKey ? 'text' : 'password'}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="sk-..."
-            className="pr-20"
+            className="pr-20 h-12"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
             <Button
@@ -616,11 +526,29 @@ export function AudioSetup({
           </div>
         </div>
 
+        <div className="flex justify-start w-full -mt-2">
+          <a
+            href="https://elevenlabs.io/app/developers/api-keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-gray-400 hover:text-black flex items-center gap-1 transition-colors"
+          >
+            Find your API key here
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+
         <Button
-          onClick={handleConnect}
+          onClick={() => {
+            if (!apiKey.trim()) {
+              toast.error('Please enter your ElevenLabs API key');
+              return;
+            }
+            handleConnect();
+          }}
           size="lg"
-          className="w-full bg-gray-400 text-white hover:bg-gray-600 text-lg py-6"
-          disabled={!apiKey.trim() || loadingVoices}
+          className="w-full bg-black text-white hover:bg-gray-800 text-lg py-6 shadow-lg transition-all"
+          disabled={loadingVoices}
         >
           {loadingVoices ? 'Connecting...' : 'Connect & Continue'}
         </Button>

@@ -181,7 +181,7 @@ export function InfographicsPanel({
 
       const newVideos = {
         ...generatedVideos,
-        [image.asset_id]: { uri: data.videoUri, data: data.videoData },
+        [image.asset_id]: { uri: data.videoUri },
       };
       setGeneratedVideos(newVideos);
       toast.success('Video generated!');
@@ -204,30 +204,13 @@ export function InfographicsPanel({
 
     try {
       const fileName = `${image.display_name}_video.mp4`;
-      if (videoInfo.data) {
-        const binaryString = atob(videoInfo.data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        const downloadUrl = `/api/download-image?url=${encodeURIComponent(videoInfo.uri)}&filename=${encodeURIComponent(fileName)}`;
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      const downloadUrl = `/api/download-image?url=${encodeURIComponent(videoInfo.uri)}&filename=${encodeURIComponent(fileName)}`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       toast.success('Video download started');
     } catch {
       toast.error('Failed to download video');

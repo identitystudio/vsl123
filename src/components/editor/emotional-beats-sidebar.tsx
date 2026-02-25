@@ -11,13 +11,16 @@ import {
   Sparkles,
   Eye,
   Send,
-  Target
+  Target,
+  Palette,
+  Camera,
+  BarChart3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useUpdateProject } from '@/hooks/use-project';
-import type { Slide } from '@/types';
+import type { Slide, ImageGenerationTheme } from '@/types';
 
 interface EmotionalBeat {
   name: string;
@@ -54,6 +57,7 @@ export function EmotionalBeatsSidebar({
   const [generatingImage, setGeneratingImage] = useState<Record<number, boolean>>({});
   const [generatingVideo, setGeneratingVideo] = useState<Record<number, boolean>>({});
   const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
+  const [selectedTheme, setSelectedTheme] = useState<ImageGenerationTheme>('realism');
   const updateProject = useUpdateProject();
 
   // Analyze the script for emotional beats
@@ -117,7 +121,7 @@ export function EmotionalBeatsSidebar({
         const res = await fetch('/api/generate-beat-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: beat.visualPrompt }),
+          body: JSON.stringify({ prompt: beat.visualPrompt, theme: selectedTheme }),
         });
 
         if (!res.ok) throw new Error('Image generation failed');
@@ -140,7 +144,7 @@ export function EmotionalBeatsSidebar({
         setGeneratingImage((prev) => ({ ...prev, [index]: false }));
       }
     },
-    [emotionalBeats, projectId, updateProject]
+    [emotionalBeats, projectId, updateProject, selectedTheme]
   );
 
   // Generate video for a specific beat
@@ -159,12 +163,13 @@ export function EmotionalBeatsSidebar({
           body: JSON.stringify({
             imageUrl: beat.imageUrl,
             prompt: beat.videoPrompt,
+            theme: selectedTheme,
           }),
         });
 
         if (!res.ok) throw new Error('Video generation failed');
         const data = await res.json();
-        const videoUrl = data.videoData ? `data:video/mp4;base64,${data.videoData}` : data.videoUri;
+        const videoUrl = data.videoUri;
         if (!videoUrl) throw new Error('No video returned');
 
         const updatedBeats = emotionalBeats.map((b, i) =>
@@ -183,7 +188,7 @@ export function EmotionalBeatsSidebar({
         setGeneratingVideo((prev) => ({ ...prev, [index]: false }));
       }
     },
-    [emotionalBeats, projectId, updateProject]
+    [emotionalBeats, projectId, updateProject, selectedTheme]
   );
 
   const handleManualApply = useCallback((url: string, type: 'image' | 'video', beatIndex: number) => {
@@ -273,7 +278,13 @@ export function EmotionalBeatsSidebar({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden border">
                     {beat.imageUrl ? (
-                      <img src={beat.imageUrl} className="w-full h-full object-cover" />
+                      <img 
+                        src={`${beat.imageUrl}${beat.imageUrl.includes('?') ? '&' : '?'}v=${Date.now()}`} 
+                        className="w-full h-full object-cover" 
+                        crossOrigin="anonymous"
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
                     ) : generatingImage[index] ? (
                       <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>
                     ) : (
@@ -289,6 +300,34 @@ export function EmotionalBeatsSidebar({
                       <div className="flex items-center justify-center h-full text-gray-300"><Video /></div>
                     )}
                   </div>
+                </div>
+
+                {/* Theme Selector */}
+                <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTheme('realism')}
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-medium transition-all ${
+                      selectedTheme === 'realism'
+                        ? 'bg-white shadow-sm text-blue-600'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Camera className="w-3 h-3" />
+                    Realism
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTheme('infographic')}
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-medium transition-all ${
+                      selectedTheme === 'infographic'
+                        ? 'bg-white shadow-sm text-purple-600'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    Infographic
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

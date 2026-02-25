@@ -20,42 +20,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Truncate slide text for reference to save context and avoid output lag
+    // Aggressively truncate slide text to keep the prompt focused and avoid noise
     let slidesContext = '';
     if (slides && Array.isArray(slides) && slides.length > 0) {
-      slidesContext = `\n\nSLIDES FOR REFERENCE:\n` +
-        slides.map((s: any, i: number) => `[S${i + 1}] ${s.fullScriptText.substring(0, 150)}...`).join('\n');
+      slidesContext = `\n\nSLIDE MAP (MANDATORY: Map beats across slides 1 to ${slides.length}):\n` +
+        slides.map((s: any, i: number) => `[S${i + 1}] ${s.fullScriptText.substring(0, 80)}...`).join('\n');
     }
 
     const finalBeatCount = Math.max(1, beatCount);
     
     const prompt = `
-    Analyze the script into EXACTLY ${finalBeatCount} emotional beats.
+    Analyze the script provided and break it down into exactly ${finalBeatCount} emotional beats.
+    Each beat MUST map to a range of slides (from startSlideIndex to endSlideIndex).
     
-    REQUIRED JSON FORMAT:
+    JSON SCHEMA FOR RESPONSE:
     {
       "beats": [
         {
-          "name": "Short summary",
-          "emotion": "Single word",
-          "visualPrompt": "20-word visual description, no text",
+          "name": "Summary of beat",
+          "emotion": "Single emotion word",
+          "visualPrompt": "20-word visual description",
           "videoPrompt": "4-word motion",
           "startSlideIndex": number,
           "endSlideIndex": number,
-          "scriptExcerpt": "Quote"
+          "scriptExcerpt": "Brief quote"
         }
       ]
     }
 
-    CONSTRAINTS:
-    - ONLY return the JSON.
-    - Be concise to prevent truncation.
+    STRICT CONSTRAINTS:
+    - You must return exactly ${finalBeatCount} beats.
+    - Covering all slides from 1 to ${slides.length}.
+    - Be extremely concise in strings to avoid JSON truncation.
+    - Output ONLY pure JSON.
 
-    SCRIPT:
-    ${script.substring(0, 6000)}
+    SLIDE INDEXES TO USE:
+    ${slidesContext}
+
+    SCRIPT CONTENT:
+    ${script.substring(0, 25000)}
     `;
 
-    console.log(`[AI] Analyzing into ${finalBeatCount} beats...`);
+    console.log(`[AI] Analyzing 90 slides into ${finalBeatCount} beats using gemini-2.5-flash...`);
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
@@ -72,37 +78,33 @@ export async function POST(request: NextRequest) {
 
     let text = result.response.text().trim();
     
-    // Extraction: find the outermost { }
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      text = text.substring(start, end + 1);
-    }
-
     let data: any;
+    
+    // Surgical JSON recovery
     try {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
+        text = text.substring(start, end + 1);
+      }
       data = JSON.parse(text);
     } catch (e) {
-      // Repair strategy: find the last completed object in the "beats" array
+      console.warn('Primary JSON parse failed, attempting surgical repair...');
       try {
         if (text.includes('"beats"')) {
-          const lastObjectEnd = text.lastIndexOf('}');
-          if (lastObjectEnd !== -1) {
-            let repaired = text.substring(0, lastObjectEnd + 1);
-            // Close array and object
+          const lastValidIndex = text.lastIndexOf('}');
+          if (lastValidIndex !== -1) {
+            let repaired = text.substring(0, lastValidIndex + 1);
             if (!repaired.endsWith(']}')) repaired += ']}';
             if (!repaired.endsWith('}')) repaired += '}';
             data = JSON.parse(repaired);
-          } else {
-            throw e;
           }
-        } else {
-          throw e;
         }
       } catch (innerE) {
-        console.error('JSON REPAIR FAILED. Raw text:', text);
-        throw new Error('AI response was unstable. Please try again with a shorter script portion.');
+        console.error('JSON REPAIR FAILED. Raw text head:', text.substring(0, 500));
+        throw new Error('AI response was unstable for this length. Try analyzing a slightly smaller portion or retry.');
       }
+      if (!data) throw e;
     }
 
     if (!data || !data.beats || !Array.isArray(data.beats)) {
@@ -112,19 +114,17 @@ export async function POST(request: NextRequest) {
     // Map indices back to UUID slideIds
     if (slides && Array.isArray(slides) && slides.length > 0) {
       data.beats = data.beats.map((beat: any) => {
-        // Handle potential string vs number from AI
         const startIdxRaw = parseInt(beat.startSlideIndex);
         const endIdxRaw = parseInt(beat.endSlideIndex);
         
         const startIdx = Math.max(1, isNaN(startIdxRaw) ? 1 : startIdxRaw) - 1;
         const endIdx = Math.min(slides.length, isNaN(endIdxRaw) ? slides.length : endIdxRaw);
         
-        // Extract the actual IDs for the range
         const slideIds = slides.slice(startIdx, endIdx).map((s: any) => s.id);
         
         return {
           ...beat,
-          slideIds: slideIds // Frontend expects slideIds array
+          slideIds: slideIds
         };
       });
     }
@@ -132,10 +132,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('Analyze script beats error:', error);
-    // Log more detail if available
-    if (error.response) {
-      console.error('AI Response Error:', JSON.stringify(error.response, null, 2));
-    }
     return NextResponse.json(
       { error: error?.message || 'Failed to analyze script beats' },
       { status: 500 }

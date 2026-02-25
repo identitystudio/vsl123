@@ -27,11 +27,11 @@ export const IMAGE_THEMES: Record<ImageTheme, ThemeConfig> = {
   },
   infographic: {
     name: 'Infographic',
-    description: 'Clean, modern, illustrative, diagram-style visuals',
-    promptPrefix: 'Modern infographic style, clean vector illustration, flat design, minimalist, professional diagram, bold colors, simple shapes, educational visual, icon-based, geometric, contemporary graphic design.',
-    promptSuffix: 'Clean infographic style, flat design, minimalist, professional.',
+    description: 'Immersive, cinematic, advanced graphic design',
+    promptPrefix: 'Cinematic infographic design, immersive visual storytelling, advanced graphic design with depth and dimension, sophisticated color grading, premium quality illustration, modern 3D isometric elements, dynamic lighting and shadows, professional gradient overlays, sleek contemporary aesthetic, award-winning composition, strategic visual hierarchy, refined typography, balanced layout, engaging data visualization, polished studio-quality graphics, cutting-edge design trends, captivating visual narrative, professional color palette.',
+    promptSuffix: 'Premium quality, immersive design, cinematic infographic, professional graphics.',
     openAIStyle: 'vivid',
-    videoPromptModifier: 'Animated infographic elements, smooth transitions, icon movements.',
+    videoPromptModifier: 'Cinematic infographic animation, smooth parallax effects, dynamic element transitions, sophisticated motion graphics, professional easing curves, layered depth animation, engaging visual flow, polished motion design, studio-quality animation.',
   },
 };
 

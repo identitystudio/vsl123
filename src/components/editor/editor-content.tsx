@@ -6,14 +6,26 @@ import { ArrowLeft, Zap, Loader2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProject, useUpdateProject, useUpdateSlides } from '@/hooks/use-project';
 import { StepIndicator } from './step-indicator';
-import { ScriptInput } from './script-input';
-import { SlideReviewer } from './slide-reviewer';
-import { AudioSetup } from './audio-setup';
-import { PreviewExport } from './preview-export';
-import { EmotionalBeatsSidebar } from './emotional-beats-sidebar';
+import dynamic from 'next/dynamic';
+
+const ScriptInput = dynamic(() => import('./script-input').then(mod => mod.ScriptInput), {
+  loading: () => <div className="p-8 animate-pulse bg-gray-50 h-96 rounded-xl" />
+});
+const SlideReviewer = dynamic(() => import('./slide-reviewer').then(mod => mod.SlideReviewer), {
+  loading: () => <div className="p-8 animate-pulse bg-gray-50 h-[600px] rounded-xl" />
+});
+const AudioSetup = dynamic(() => import('./audio-setup').then(mod => mod.AudioSetup), {
+  loading: () => <div className="p-8 animate-pulse bg-gray-50 h-96 rounded-xl" />
+});
+const PreviewExport = dynamic(() => import('./preview-export').then(mod => mod.PreviewExport), {
+  loading: () => <div className="p-8 animate-pulse bg-gray-50 h-96 rounded-xl" />
+});
+const EmotionalBeatsSidebar = dynamic(() => import('./emotional-beats-sidebar').then(mod => mod.EmotionalBeatsSidebar), {
+  loading: () => <div className="w-80 border-l animate-pulse bg-gray-50 h-full" />
+});
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { EditorStep, Slide } from '@/types';
+import type { EditorStep, Slide, ImageGenerationTheme } from '@/types';
 import { toast } from 'sonner';
 
 const MAGIC_QUOTES = [
@@ -151,7 +163,8 @@ export function EditorContent({ projectId }: EditorContentProps) {
       url: string,
       type: 'image' | 'video',
       slideIds: string[],
-      slidesOverride?: Slide[]
+      slidesOverride?: Slide[],
+      options?: { skipRefetch?: boolean }
     ) => {
       const slidesSource = slidesOverride || project?.slides;
       if (!slidesSource) return;
@@ -228,7 +241,10 @@ export function EditorContent({ projectId }: EditorContentProps) {
           await Promise.all(updatePromises);
 
           // Single refetch after ALL slides are updated to ensure consistency
-          refetch();
+          // BUT skip it if we are in the middle of a larger pipeline (e.g. runAutoPipeline)
+          if (!options?.skipRefetch) {
+            refetch();
+          }
         } catch (err) {
           console.error('Background slide save failed:', err);
           toast.error('Failed to save slide changes');
@@ -247,7 +263,15 @@ export function EditorContent({ projectId }: EditorContentProps) {
   );
 
   const runAutoPipeline = useCallback(
-      async ({ slides, originalScript }: { slides: Slide[]; originalScript: string }) => {
+      async ({ 
+        slides, 
+        originalScript,
+        theme = 'realism' 
+      }: { 
+        slides: Slide[]; 
+        originalScript: string;
+        theme?: ImageGenerationTheme;
+      }) => {
         if (autoPipelineRunningRef.current) return;
         if (!originalScript.trim()) {
           toast.error('Script is missing. Skipping emotional beats automation.');
@@ -276,14 +300,14 @@ export function EditorContent({ projectId }: EditorContentProps) {
             }),
           });
 
+          const analyzeData = await analyzeResponse.json().catch(() => ({}));
+          
           if (!analyzeResponse.ok) {
-            const err = await analyzeResponse.json().catch(() => ({}));
-            throw new Error(err.error || 'Failed to analyze script beats');
+            throw new Error(analyzeData.error || `Analysis failed (${analyzeResponse.status})`);
           }
 
-          const analyzeData = await analyzeResponse.json();
           if (!analyzeData.beats || !Array.isArray(analyzeData.beats)) {
-            throw new Error('Analyze beats response invalid');
+            throw new Error('Analyze beats response invalid: missing beats array');
           }
 
           let beats = analyzeData.beats as Array<any>;
@@ -306,7 +330,10 @@ export function EditorContent({ projectId }: EditorContentProps) {
               const imageResponse = await fetch('/api/generate-beat-image', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: beat.visualPrompt }),
+                body: JSON.stringify({ 
+                  prompt: beat.visualPrompt,
+                  theme,
+                }),
               });
 
               if (!imageResponse.ok) {
@@ -320,7 +347,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                 beat.imageUrl = imageData.imageUrl;
                 // Apply image to the first slide of the beat immediately for visual feedback
                 if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
-                  await handleApplyToSlide(beat.imageUrl, 'image', [beat.slideIds[0]], slides);
+                  await handleApplyToSlide(beat.imageUrl, 'image', [beat.slideIds[0]], slides, { skipRefetch: true });
                 }
               }
             } catch (err) {
@@ -351,6 +378,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                 body: JSON.stringify({
                   imageUrl: beat.imageUrl,
                   prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
+                  theme,
                 }),
               });
 
@@ -360,16 +388,14 @@ export function EditorContent({ projectId }: EditorContentProps) {
                 continue;
               }
 
-              const videoUrl = videoData.videoData
-                ? `data:video/mp4;base64,${videoData.videoData}`
-                : videoData.videoUri;
+              const videoUrl = videoData.videoUri;
 
               if (!videoUrl) continue;
               beat.videoUrl = videoUrl;
 
               if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
                 // User requested only the first slide of each beat get the video/image
-                await handleApplyToSlide(videoUrl, 'video', [beat.slideIds[0]], slides);
+                await handleApplyToSlide(videoUrl, 'video', [beat.slideIds[0]], slides, { skipRefetch: true });
               }
             } catch (err) {
               console.warn('Beat video error:', err);
@@ -383,10 +409,22 @@ export function EditorContent({ projectId }: EditorContentProps) {
             updates: { emotional_beats: beats },
           });
 
+          // FINAL REFETCH: Now that everything is done, sync the cache once
+          refetch();
+
           toast.success('Auto pipeline complete: beats, images, videos applied.');
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Auto pipeline failed';
-          console.error('Auto pipeline error:', err);
+        } catch (err: any) {
+          console.error('Auto pipeline error details:', err);
+          let message = 'Auto pipeline failed';
+          
+          if (err instanceof Error) {
+            message = err.message;
+          } else if (typeof err === 'object' && err !== null) {
+            message = err.message || err.error || JSON.stringify(err);
+          } else if (typeof err === 'string') {
+            message = err;
+          }
+          
           toast.error(message);
         } finally {
           autoPipelineRunningRef.current = false;
@@ -399,7 +437,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const handleSlidesGenerated = useCallback(
     async (
       slides: Slide[],
-      options?: { autoPipeline?: boolean; originalScript?: string }
+      options?: { autoPipeline?: boolean; originalScript?: string; theme?: ImageGenerationTheme }
     ) => {
       try {
         await updateSlides.mutateAsync({ projectId, slides });
@@ -413,6 +451,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
           await runAutoPipeline({
             slides,
             originalScript: options.originalScript || project?.original_script || '',
+            theme: options.theme,
           });
         }
 

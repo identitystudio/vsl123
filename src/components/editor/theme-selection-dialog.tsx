@@ -113,12 +113,12 @@ export function ThemeSelectionDialog({
                 </div>
                 <div>
                   <div className="font-bold text-lg">Infographic</div>
-                  <div className="text-xs text-gray-500">Illustrative</div>
+                  <div className="text-xs text-gray-500">Immersive Design</div>
                 </div>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Clean vector illustrations and diagrams. Ideal for educational
-                content, data visualization, and modern tech presentations.
+                Cinematic infographic design with depth, 3D isometric elements, and 
+                premium visual storytelling. Perfect for immersive, advanced graphics.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">
@@ -142,7 +142,7 @@ export function ThemeSelectionDialog({
             <p className="text-xs text-gray-600">
               {selectedTheme === 'realism'
                 ? 'Your images will look like professional photographs with natural lighting, realistic textures, and cinematic composition. Videos will feature smooth, realistic camera movements.'
-                : 'Your images will feature clean vector graphics, flat design elements, bold colors, and modern minimalist aesthetics. Videos will have animated infographic elements and smooth transitions.'}
+                : 'Your images will feature cinematic infographic design with depth and dimension, 3D isometric elements, premium quality illustration with dynamic lighting and gradients. Videos will have sophisticated motion graphics and smooth transitions.'}
             </p>
           </div>
 

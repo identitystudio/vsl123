@@ -18,7 +18,7 @@ interface DashboardContentProps {
 
 export function DashboardContent({ email, userId }: DashboardContentProps) {
   const router = useRouter();
-  const { data: projects, isInitialLoading } = useProjects(userId);
+  const { data: projects, isInitialLoading, ...query } = useProjects(userId);
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
   const updateProject = useUpdateProject();
@@ -169,10 +169,11 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
           </div>
         ) : projects && projects.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
+            {projects.map((project, index) => (
               <div
                 key={project.id}
-                className="group relative flex flex-col p-6 rounded-2xl border border-gray-200 hover:border-black/10 hover:shadow-xl hover:shadow-gray-200/50 transition-all bg-white overflow-hidden"
+                style={{ animationDelay: `${(index % 9) * 100}ms` }}
+                className="group relative flex flex-col p-6 rounded-2xl border border-gray-200 hover:border-black/10 hover:shadow-xl hover:shadow-gray-200/50 transition-all bg-white overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
               >
                 {/* Decorative background element */}
                 <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-gray-50 rounded-full group-hover:bg-black/5 transition-colors" />
@@ -289,6 +290,40 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
             </Button>
           </div>
         ) : null}
+
+        {/* Lazy Loading / Load More */}
+        {(query as any).hasNextPage && (
+          <div 
+            ref={(el) => {
+              if (!el) return;
+              const observer = new IntersectionObserver(
+                (entries) => {
+                  if (entries[0].isIntersecting && !(query as any).isFetchingNextPage) {
+                    (query as any).fetchNextPage();
+                  }
+                },
+                { threshold: 0.1 }
+              );
+              observer.observe(el);
+            }}
+            className="mt-12 flex justify-center py-10"
+          >
+            {(query as any).isFetchingNextPage ? (
+              <div className="flex items-center gap-3 text-gray-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm font-medium">Loading more projects...</span>
+              </div>
+            ) : (
+              <Button 
+                variant="ghost" 
+                onClick={() => (query as any).fetchNextPage()}
+                className="text-gray-400 hover:text-black font-medium"
+              >
+                Scroll to load more or click here
+              </Button>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

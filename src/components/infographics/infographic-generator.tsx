@@ -180,7 +180,6 @@ export function InfographicGenerator({
         ...prev,
         [image.asset_id]: {
           uri: data.videoUri,
-          data: data.videoData,
         },
       }));
       toast.success('Video generated! Ready to download');
@@ -202,33 +201,13 @@ export function InfographicGenerator({
 
     try {
       const fileName = `${image.display_name}_video.mp4`;
-      
-      // If we have video data, download directly from base64
-      if (videoInfo.data) {
-        const binaryString = atob(videoInfo.data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        // Fall back to download-image proxy
-        const downloadUrl = `/api/download-image?url=${encodeURIComponent(videoInfo.uri)}&filename=${encodeURIComponent(fileName)}`;
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      const downloadUrl = `/api/download-image?url=${encodeURIComponent(videoInfo.uri)}&filename=${encodeURIComponent(fileName)}`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       toast.success('Video download started');
     } catch (err) {
       toast.error('Failed to download video');

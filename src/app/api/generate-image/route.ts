@@ -108,7 +108,58 @@ async function generateWithGemini(prompt: string, apiKey: string, theme: ImageTh
     );
   }
 
-  // Return as base64 data URL
+  // Create a blob and upload to Cloudinary
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const clApiKey = process.env.CLOUDINARY_API_KEY;
+  const clApiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if (cloudName && clApiKey && clApiSecret) {
+    try {
+      const crypto = await import('crypto');
+      const timestamp = Math.floor(Date.now() / 1000);
+      const publicId = `gen_img_${Date.now()}`;
+      
+      const params = {
+        folder: 'vsl123-background-images',
+        public_id: publicId,
+        timestamp: timestamp.toString(),
+      };
+
+      const sortedParams = Object.keys(params)
+        .sort()
+        .map((key) => `${key}=${params[key as keyof typeof params]}`)
+        .join('&');
+
+      const stringToSign = sortedParams + clApiSecret;
+      const signature = crypto.createHash('sha1').update(stringToSign).digest('hex');
+
+      const formData = new FormData();
+      formData.append('file', `data:image/png;base64,${imageBytes}`);
+      formData.append('api_key', clApiKey);
+      formData.append('timestamp', timestamp.toString());
+      formData.append('folder', 'vsl123-background-images');
+      formData.append('public_id', publicId);
+      formData.append('signature', signature);
+
+      const clResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (clResponse.ok) {
+        const clData = await clResponse.json();
+        return NextResponse.json({ imageUrl: clData.secure_url, provider: 'gemini' });
+      }
+      console.error('Cloudinary upload failed for Gemini image');
+    } catch (err) {
+      console.error('Cloudinary processing error:', err);
+    }
+  }
+
+  // Fallback to base64 if Cloudinary fails or is not configured
   const imageUrl = `data:image/png;base64,${imageBytes}`;
   return NextResponse.json({ imageUrl, provider: 'gemini' });
 }
