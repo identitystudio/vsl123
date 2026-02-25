@@ -443,9 +443,23 @@ export function SlideReviewer({
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-      setEditing(false);
-      setEditSlide(null);
+      if (editing && editSlide) {
+        // Save current slide before navigating
+        const slideToSave = { ...editSlide, reviewed: true };
+        const updated = [...slides];
+        updated[currentIndex] = slideToSave;
+        setSlides(updated);
+        syncProjectSlides(updated);
+        saveSingleSlide(slideToSave);
+        // Move to previous slide and keep editing
+        const prevIndex = currentIndex - 1;
+        setCurrentIndex(prevIndex);
+        setEditSlide({ ...updated[prevIndex] });
+      } else {
+        setCurrentIndex(currentIndex - 1);
+        setEditing(false);
+        setEditSlide(null);
+      }
     }
   };
 

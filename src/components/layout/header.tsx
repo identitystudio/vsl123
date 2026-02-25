@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
-import { Zap, LogOut, Sparkles } from 'lucide-react';
+import { Zap, LogOut } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 
@@ -20,7 +20,6 @@ export function Header({ email }: HeaderProps) {
     router.refresh();
   };
 
-  const isInfographicPage = pathname === '/infographics';
   const isDashboard = pathname === '/dashboard';
 
   return (
@@ -46,15 +45,6 @@ export function Header({ email }: HeaderProps) {
                 className={isDashboard ? 'bg-black text-white hover:bg-gray-800' : 'text-gray-600 hover:text-black'}
               >
                 Projects
-              </Button>
-              <Button
-                variant={isInfographicPage ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => router.push('/infographics')}
-                className={isInfographicPage ? 'bg-black text-white hover:bg-gray-800' : 'text-gray-600 hover:text-black'}
-              >
-                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                Infographics
               </Button>
             </nav>
           )}

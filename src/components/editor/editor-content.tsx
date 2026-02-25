@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Zap, Loader2 } from 'lucide-react';
+import { ArrowLeft, Home, Zap, Loader2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProject, useUpdateProject, useUpdateSlides } from '@/hooks/use-project';
 import { StepIndicator } from './step-indicator';
@@ -622,13 +622,23 @@ export function EditorContent({ projectId }: EditorContentProps) {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Editor Header */}
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between shrink-0">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-1 text-sm text-gray-600 hover:text-black transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {currentStep === 1 ? 'Exit' : 'Back'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-black transition-colors cursor-pointer"
+            title="Go to Dashboard"
+          >
+            <Home className="w-4 h-4" />
+          </button>
+          <span className="text-gray-200">|</span>
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 text-sm text-gray-600 hover:text-black transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            {currentStep === 1 ? 'Exit' : 'Back'}
+          </button>
+        </div>
 
         <StepIndicator currentStep={currentStep} />
 

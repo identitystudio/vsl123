@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     if (!apiKey) {
       console.warn("⚠️ Webhook API key not provided");
       return Response.json(
-        { error: "Webhook API key is missing. Please enter it in the theme selection options." },
+        { error: "PI API key is missing. Please enter it in the theme selection options." },
         { status: 400 }
       );
     }

@@ -15,11 +15,17 @@ export default function SignupPage() {
   const supabase = createClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordMismatch, setPasswordMismatch] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
     setLoading(true);
 
     const { error } = await supabase.auth.signUp({
@@ -85,6 +91,33 @@ export default function SignupPage() {
                 )}
               </button>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Input
+              id="confirmPassword"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                if (passwordMismatch) setPasswordMismatch(false);
+              }}
+              onBlur={() => {
+                if (confirmPassword && password !== confirmPassword) {
+                  setPasswordMismatch(true);
+                } else {
+                  setPasswordMismatch(false);
+                }
+              }}
+              required
+              minLength={6}
+              className={passwordMismatch ? 'border-red-500 focus-visible:ring-red-500' : ''}
+            />
+            {passwordMismatch && (
+              <p className="text-xs text-red-500">Passwords do not match</p>
+            )}
           </div>
 
           <Button
