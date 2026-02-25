@@ -195,7 +195,38 @@ export function SlideReviewer({
   // Sync local state with props to ensure we have the latest IDs (especially after regeneration)
   useEffect(() => {
     setSlides(initialSlides);
-  }, [initialSlides]);
+
+    // If we are currently editing a slide, and that slide has been updated externally (e.g. via Emotional Beats),
+    // we need to merge those changes into our local edit state without overwriting text changes.
+    if (editing && editSlide) {
+      const updatedSlide = initialSlides.find((s) => s.id === editSlide.id);
+      if (updatedSlide) {
+        // Check for background/visual changes specifically
+        const hasVisualChanges = 
+          updatedSlide.backgroundVideoUrl !== editSlide.backgroundVideoUrl ||
+          updatedSlide.backgroundImage?.url !== editSlide.backgroundImage?.url ||
+          updatedSlide.style.background !== editSlide.style.background ||
+          updatedSlide.style.textColor !== editSlide.style.textColor;
+
+        if (hasVisualChanges) {
+          setEditSlide((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              hasBackgroundImage: updatedSlide.hasBackgroundImage,
+              backgroundImage: updatedSlide.backgroundImage,
+              backgroundVideoUrl: updatedSlide.backgroundVideoUrl,
+              style: {
+                ...prev.style, // Keep existing style props like textSize
+                background: updatedSlide.style.background,
+                textColor: updatedSlide.style.textColor,
+              },
+            };
+          });
+        }
+      }
+    }
+  }, [initialSlides, editing]); // removed editSlide from deps to avoid infinite loop if we were deep comparing
 
   // Sync current index when navigating from emotional beats sidebar
   useEffect(() => {

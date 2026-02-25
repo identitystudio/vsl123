@@ -161,12 +161,14 @@ export function InfographicGenerator({
       console.log('Starting video generation for:', image.display_name);
       const effectiveVideoPrompt = (videoPrompt || prompt || 'Create a video based on this image').trim();
       
+      const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
       const response = await fetch('/api/image-to-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageUrl: image.secure_url,
           prompt: effectiveVideoPrompt,
+          apiKey: apiKey,
         }),
       });
 

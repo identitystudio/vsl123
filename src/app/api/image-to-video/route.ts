@@ -1,11 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
-import { getThemeConfig, type ImageTheme } from "@/lib/image-themes";
 import crypto from 'crypto';
+import { getThemeConfig, type ImageTheme } from "@/lib/image-themes";
 
 export async function POST(req: Request) {
   try {
-    const { imageUrl, prompt, theme = 'realism' } = await req.json();
-    console.log("🎬 Video Generation Request:", { imageUrl: imageUrl?.substring(0, 50), prompt, theme });
+    const { imageUrl, prompt, theme = 'realism', apiKey } = await req.json();
+    console.log("🎬 Video Generation Request (webhook):", { imageUrl: imageUrl?.substring(0, 50), prompt, theme });
 
     if (!imageUrl || !prompt) {
       return Response.json(
@@ -14,113 +13,94 @@ export async function POST(req: Request) {
       );
     }
 
-    const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      console.error("❌ Google API key missing");
+      console.warn("⚠️ Webhook API key not provided");
       return Response.json(
-        { error: "Google API key not configured" },
-        { status: 500 }
-      );
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const themeConfig = getThemeConfig(theme as ImageTheme);
-
-    // Fetch the image from URL
-    console.log("📥 Fetching image to convert to video...");
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      console.error("❌ Failed to fetch image:", imageResponse.status, imageResponse.statusText);
-      return Response.json(
-        { error: `Failed to fetch image: ${imageResponse.statusText}` },
+        { error: "Webhook API key is missing. Please enter it in the theme selection options." },
         { status: 400 }
       );
     }
-    const mimeType = imageResponse.headers.get("content-type") || "image/png";
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const imageBytes = Buffer.from(imageBuffer).toString("base64");
 
-    console.log("🚀 Starting Google Veo generation...");
+    console.log("🚀 Starting webhook video generation...");
 
-    // Enhance prompt with theme-specific video modifier
+    const themeConfig = getThemeConfig(theme as ImageTheme);
     const enhancedPrompt = `${prompt}. ${themeConfig.videoPromptModifier}`;
 
-    // Generate video with Veo 3.1
-    let operation = await ai.models.generateVideos({
-      model: "veo-3.1-generate-preview",
-      prompt: enhancedPrompt,
-      image: {
-        imageBytes: imageBytes,
-        mimeType: mimeType,
+    const webhookUrl = "https://themacularprogram.app.n8n.cloud/webhook/video-generation";
+    
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        api_key: apiKey,
+        prompt: enhancedPrompt,
+        image_url: imageUrl,
+      }),
     });
 
-    console.log("⏳ Operation started ID:", (operation as any).id || 'unknown');
-
-    // Poll for completion
-    let attempts = 0;
-    const maxAttempts = 30;
-    
-    while (!operation.done && attempts < maxAttempts) {
-      console.log(`⏱️ Polling attempt ${attempts + 1}/${maxAttempts}...`);
-      await new Promise((resolve) => setTimeout(resolve, 15000));
-      
-      try {
-        operation = await ai.operations.getVideosOperation({
-          operation: operation,
-        });
-      } catch (pollErr: any) {
-        console.warn("⚠️ Poll attempt failed, retrying...", pollErr.message);
-      }
-      attempts++;
-    }
-
-    if (!operation.done) {
-      console.error("❌ Video generation timed out");
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("❌ Webhook HTTP error:", response.status, text);
       return Response.json(
-        { error: "Video taking too long. Try again or check later." },
-        { status: 504 }
+        { error: `Webhook failed: ${response.statusText}` },
+        { status: response.status }
       );
     }
 
-    if ((operation as any).error) {
-      const err = (operation as any).error;
-      console.error("❌ Google AI error:", err);
+    const data = await response.json();
+    
+    // Webhook should return an array with one object
+    if (!Array.isArray(data) || data.length === 0) {
+      console.error("❌ Invalid webhook response format:", data);
       return Response.json(
-        { error: `Google AI rejected: ${err.message || JSON.stringify(err)}` },
+        { error: "Invalid response from webhook." },
         { status: 500 }
       );
     }
 
-    const raiReasons = operation.response?.raiMediaFilteredReasons;
-    if (raiReasons && raiReasons.length > 0) {
-      console.warn("⚠️ RAI Filter triggered:", raiReasons);
+    const result = data[0];
+
+    // Check message logic from webhook
+    if (result.message && result.message.toLowerCase() !== "success") {
+      console.error("❌ Webhook error message:", result.message);
       return Response.json(
-        { error: `Safety filter: ${raiReasons[0]}. Try a different prompt.` },
+        { error: result.message }, // Example: "insufficient funds"
         { status: 400 }
       );
     }
 
-    if (!operation.response?.generatedVideos?.[0]?.video?.uri) {
-      console.error("❌ No video URI in response");
+    // Check inner code and errors
+    if (result.code !== 200 || !result.data || result.data.status !== "completed") {
+      const logError = Array.isArray(result.data?.logs) ? result.data.logs[0] : null;
+      const errorMsg = result.data?.error?.message || logError || result.message || "Video generation failed";
+      console.error("❌ Webhook generation failed:", errorMsg);
+      return Response.json(
+        { error: errorMsg },
+        { status: 400 }
+      );
+    }
+
+    const videoUri = result.data?.output?.video;
+    
+    if (!videoUri) {
+      console.error("❌ No video URI in webhook response");
       return Response.json(
         { error: "Generation complete but no video file found." },
         { status: 500 }
       );
     }
 
-    const videoUri = operation.response.generatedVideos[0].video.uri;
-    console.log("✅ Video generated, URI:", videoUri);
+    console.log("✅ Webhook video generated, URI:", videoUri);
 
-    // Download and move to Cloudinary
+    // Download and move to Cloudinary (since webhook URL may be ephemeral)
     try {
       console.log("🛰️ Downloading video for Cloudinary transfer...");
-      const videoResponse = await fetch(videoUri, {
-        headers: { "X-Goog-Api-Key": apiKey },
-      });
+      const videoResponse = await fetch(videoUri);
 
       if (!videoResponse.ok) {
-        console.warn("⚠️ Download failed, returning Google URI as fallback");
+        console.warn("⚠️ Download failed, returning webhook URI as fallback");
         return Response.json({ videoUri, success: true });
       }
 
@@ -137,7 +117,7 @@ export async function POST(req: Request) {
       }
 
       const timestamp = Math.floor(Date.now() / 1000);
-      const publicId = `gen_video_${Date.now()}`;
+      const publicId = `gen_video_webhook_${Date.now()}`;
       
       const params = {
         folder: 'vsl123-background-videos', // Use existing successful folder

@@ -372,6 +372,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
             await sleep(AUTO_BEAT_VIDEO_DELAY_MS);
 
             try {
+              const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
               const videoResponse = await fetch('/api/image-to-video', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -379,6 +380,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                   imageUrl: beat.imageUrl,
                   prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
                   theme,
+                  apiKey: apiKey,
                 }),
               });
 

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Palette, Camera, BarChart3, Check } from 'lucide-react';
+import { Palette, Camera, BarChart3, Check, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,7 @@ import type { ImageGenerationTheme } from '@/types';
 interface ThemeSelectionDialogProps {
   open: boolean;
   onClose: () => void;
-  onThemeSelected: (theme: ImageGenerationTheme) => void;
+  onThemeSelected: (theme: ImageGenerationTheme, apiKey?: string) => void;
   defaultTheme?: ImageGenerationTheme;
 }
 
@@ -26,16 +27,24 @@ export function ThemeSelectionDialog({
   defaultTheme = 'realism',
 }: ThemeSelectionDialogProps) {
   const [selectedTheme, setSelectedTheme] = useState<ImageGenerationTheme>(defaultTheme);
+  const [apiKey, setApiKey] = useState('');
 
-  // Sync to the last-used theme whenever the dialog is opened
+  // Sync to the last-used theme and API key whenever the dialog is opened
   useEffect(() => {
     if (open) {
       setSelectedTheme(defaultTheme);
+      const savedKey = localStorage.getItem('vsl123-webhook-api-key') || '';
+      setApiKey(savedKey);
     }
   }, [open, defaultTheme]);
 
   const handleContinue = () => {
-    onThemeSelected(selectedTheme);
+    if (apiKey) {
+      localStorage.setItem('vsl123-webhook-api-key', apiKey);
+    } else {
+      localStorage.removeItem('vsl123-webhook-api-key');
+    }
+    onThemeSelected(selectedTheme, apiKey);
   };
 
   return (
@@ -144,6 +153,33 @@ export function ThemeSelectionDialog({
                 ? 'Your images will look like professional photographs with natural lighting, realistic textures, and cinematic composition. Videos will feature smooth, realistic camera movements.'
                 : 'Your images will feature cinematic infographic design with depth and dimension, 3D isometric elements, premium quality illustration with dynamic lighting and gradients. Videos will have sophisticated motion graphics and smooth transitions.'}
             </p>
+          </div>
+
+          {/* API Key Input */}
+          <div className="p-4 bg-gray-50 rounded-lg border mt-4">
+            <div className="text-sm font-medium mb-1 flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Pi API Key
+            </div>
+            <p className="text-[11px] text-gray-500 mb-2 leading-tight">
+              If you have no API key,{" "}
+              <a 
+                href="https://piapi.ai/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline font-medium"
+              >
+                click here
+              </a>{" "}
+              and top up to use the platform.
+            </p>
+            <Input 
+              type="password"
+              placeholder="Enter your Pi API key..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              className="w-full bg-white h-9 text-sm"
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

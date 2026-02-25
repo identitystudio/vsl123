@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Heart,
   Loader2,
@@ -14,7 +14,8 @@ import {
   Target,
   Palette,
   Camera,
-  BarChart3
+  BarChart3,
+  Key
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +59,21 @@ export function EmotionalBeatsSidebar({
   const [generatingVideo, setGeneratingVideo] = useState<Record<number, boolean>>({});
   const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
   const [selectedTheme, setSelectedTheme] = useState<ImageGenerationTheme>('realism');
+  const [apiKey, setApiKey] = useState('');
   const updateProject = useUpdateProject();
+
+  useEffect(() => {
+    setApiKey(localStorage.getItem('vsl123-webhook-api-key') || '');
+  }, []);
+
+  const handleApiKeyChange = (val: string) => {
+    setApiKey(val);
+    if (val) {
+      localStorage.setItem('vsl123-webhook-api-key', val);
+    } else {
+      localStorage.removeItem('vsl123-webhook-api-key');
+    }
+  };
 
   // Analyze the script for emotional beats
   const handleAnalyzeScript = useCallback(async () => {
@@ -157,6 +172,7 @@ export function EmotionalBeatsSidebar({
       toast.info(`Generating video for "${beat.name}"...`);
 
       try {
+        const currentApiKey = apiKey || localStorage.getItem('vsl123-webhook-api-key') || '';
         const res = await fetch('/api/image-to-video', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -164,10 +180,14 @@ export function EmotionalBeatsSidebar({
             imageUrl: beat.imageUrl,
             prompt: beat.videoPrompt,
             theme: selectedTheme,
+            apiKey: currentApiKey,
           }),
         });
 
-        if (!res.ok) throw new Error('Video generation failed');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Video generation failed');
+        }
         const data = await res.json();
         const videoUrl = data.videoUri;
         if (!videoUrl) throw new Error('No video returned');
@@ -183,12 +203,12 @@ export function EmotionalBeatsSidebar({
 
         toast.success(`Video generated for "${beat.name}"`);
       } catch (error: any) {
-        toast.error('Failed to generate video');
+        toast.error(error.message || 'Failed to generate video');
       } finally {
         setGeneratingVideo((prev) => ({ ...prev, [index]: false }));
       }
     },
-    [emotionalBeats, projectId, updateProject, selectedTheme]
+    [emotionalBeats, projectId, updateProject, selectedTheme, apiKey]
   );
 
   const handleManualApply = useCallback((url: string, type: 'image' | 'video', beatIndex: number) => {
@@ -212,11 +232,11 @@ export function EmotionalBeatsSidebar({
   if (!isOpen) {
     return (
       <div className="fixed right-0 top-14 w-12 border-l border-gray-200 bg-white flex flex-col items-center py-4 gap-4 h-[calc(100vh-3.5rem)] z-40">
-        <Button variant="ghost" size="icon" onClick={() => setIsOpen(true)} className="text-purple-600">
+        <Button variant="ghost" size="icon" onClick={() => setIsOpen(true)} className="text-black">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <div className="flex flex-col items-center gap-2">
-          <Heart className="w-4 h-4 text-purple-600" />
+          <Heart className="w-4 h-4 text-black" />
           <span className="text-[10px] font-medium text-gray-500 rotate-90 whitespace-nowrap mt-8">
             Emotional Beats
           </span>
@@ -226,26 +246,50 @@ export function EmotionalBeatsSidebar({
   }
 
   return (
-    <div className="fixed right-0 top-14 w-80 border-l border-gray-200 bg-white flex flex-col h-[calc(100vh-3.5rem)] z-40 shadow-xl overflow-hidden">
-      <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-gradient-to-r from-purple-50 to-pink-50">
+    <div className="fixed right-0 top-14 w-[450px] border-l border-gray-200 bg-white flex flex-col h-[calc(100vh-3.5rem)] z-40 shadow-xl overflow-hidden">
+      <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white">
         <div className="flex items-center gap-2">
-          <Heart className="w-4 h-4 text-purple-600" />
-          <span className="font-semibold text-gray-800">Emotional Beats</span>
+          <Heart className="w-4 h-4 text-black" />
+          <span className="font-semibold text-black">Emotional Beats</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
           <ChevronRight className="w-4 h-4 text-gray-500" />
         </Button>
       </div>
 
-      <div className="px-4 py-3 border-b border-gray-100">
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3">
         <Button
           onClick={handleAnalyzeScript}
           disabled={isAnalyzing || !originalScript}
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm h-9 gap-2"
+          className="w-full bg-black hover:bg-gray-800 text-white text-sm h-9 gap-2"
         >
           {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           Re-Analyze Script
         </Button>
+
+        <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-200">
+          <div className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1 mb-1">
+            <Key className="w-3 h-3" /> Pi API Key
+          </div>
+          <p className="text-[9px] text-gray-500 mb-2 leading-tight">
+            No key?{" "}
+            <a 
+              href="https://piapi.ai/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-black hover:underline font-bold"
+            >
+              Click here to top up
+            </a>
+          </p>
+          <Input 
+            type="password"
+            placeholder="Enter Pi API key..."
+            value={apiKey}
+            onChange={(e) => handleApiKeyChange(e.target.value)}
+            className="h-7 text-[11px] bg-white focus-visible:ring-black"
+          />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 thin-scrollbar">
@@ -259,14 +303,14 @@ export function EmotionalBeatsSidebar({
             <div key={index} className="rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
               <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                  <span className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold shrink-0">
                     {index + 1}
                   </span>
                   <h3 className="text-xs font-bold text-gray-800 truncate">{beat.name}</h3>
                 </div>
                 <Button
                   variant="ghost"
-                  className="h-6 px-2 text-[10px] text-purple-600 gap-1"
+                  className="h-6 px-2 text-[10px] text-black gap-1"
                   onClick={() => onGoToSlide(beat.slideIds[0])}
                 >
                   <Eye className="w-3 h-3" />
@@ -309,7 +353,7 @@ export function EmotionalBeatsSidebar({
                     onClick={() => setSelectedTheme('realism')}
                     className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-medium transition-all ${
                       selectedTheme === 'realism'
-                        ? 'bg-white shadow-sm text-blue-600'
+                        ? 'bg-white shadow-sm text-black ring-1 ring-black'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -321,7 +365,7 @@ export function EmotionalBeatsSidebar({
                     onClick={() => setSelectedTheme('infographic')}
                     className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-medium transition-all ${
                       selectedTheme === 'infographic'
-                        ? 'bg-white shadow-sm text-purple-600'
+                        ? 'bg-white shadow-sm text-black ring-1 ring-black'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -359,7 +403,7 @@ export function EmotionalBeatsSidebar({
                   <div className="grid grid-cols-2 gap-2">
                     <Button
                       size="sm"
-                      className="h-7 text-[10px] bg-purple-600 hover:bg-purple-700"
+                      className="h-7 text-[10px] bg-black hover:bg-gray-800"
                       onClick={() => onApplyToSlide(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', [beat.slideIds[0]])}
                       disabled={!beat.imageUrl && !beat.videoUrl}
                     >
@@ -368,7 +412,7 @@ export function EmotionalBeatsSidebar({
                     <Button
                       size="sm"
                       variant="secondary"
-                      className="h-7 text-[10px]"
+                      className="h-7 text-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-black"
                       onClick={() => onApplyToSlide(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', [slides[currentSlideIndex].id])}
                       disabled={!beat.imageUrl && !beat.videoUrl}
                     >
@@ -380,7 +424,7 @@ export function EmotionalBeatsSidebar({
                     <div className="relative flex-1">
                       <Input
                         placeholder="Slide #"
-                        className="h-7 text-[10px] pr-8"
+                        className="h-7 text-[10px] pr-8 focus-visible:ring-black"
                         value={manualInputs[index] || ''}
                         onChange={(e) => setManualInputs(prev => ({ ...prev, [index]: e.target.value }))}
                       />
@@ -388,7 +432,7 @@ export function EmotionalBeatsSidebar({
                     </div>
                     <Button
                       size="sm"
-                      className="h-7 px-2"
+                      className="h-7 px-2 bg-black hover:bg-gray-800"
                       onClick={() => handleManualApply(beat.videoUrl || beat.imageUrl || '', beat.videoUrl ? 'video' : 'image', index)}
                       disabled={!beat.imageUrl && !beat.videoUrl}
                     >

@@ -425,7 +425,7 @@ export function ScriptInput({
     setShowThemeDialog(true);
   };
 
-  const handleThemeSelectedAndGenerate = async (theme: ImageGenerationTheme) => {
+  const handleThemeSelectedAndGenerate = async (theme: ImageGenerationTheme, apiKey?: string) => {
     setShowThemeDialog(false);
     setSelectedImageTheme(theme); // persisted so ThemeSelectionDialog can default to last choice
 

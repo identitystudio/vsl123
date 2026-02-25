@@ -61,15 +61,15 @@ export async function POST(request: NextRequest) {
     ${script.substring(0, 25000)}
     `;
 
-    console.log(`[AI] Analyzing 90 slides into ${finalBeatCount} beats using gemini-2.5-flash...`);
+    console.log(`[AI] Analyzing ${slides.length} slides into ${finalBeatCount} beats using gemini-2.5-flash...`);
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
-      } as any,
+        maxOutputTokens: 2048,
+        temperature: 0.2,
+      },
     });
 
     const result = await model.generateContent({
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       }
       data = JSON.parse(text);
     } catch (e) {
-      console.warn('Primary JSON parse failed, attempting surgical repair...');
+      console.warn('Primary JSON parse failed. Raw response snippet:', text.substring(0, 500));
       try {
         if (text.includes('"beats"')) {
           const lastValidIndex = text.lastIndexOf('}');
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
           }
         }
       } catch (innerE) {
-        console.error('JSON REPAIR FAILED. Raw text head:', text.substring(0, 500));
+        console.error('JSON REPAIR FAILED. Full raw response:', text);
         throw new Error('AI response was unstable for this length. Try analyzing a slightly smaller portion or retry.');
       }
       if (!data) throw e;

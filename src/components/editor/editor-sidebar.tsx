@@ -169,11 +169,12 @@ export function InfographicsPanel({
   const handleGenerateVideo = async (image: InfographicImage) => {
     setGeneratingVideos((prev) => ({ ...prev, [image.asset_id]: true }));
     try {
+      const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
       const effectivePrompt = (videoPrompt || prompt || 'Create a video based on this image').trim();
       const response = await fetch('/api/image-to-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: image.secure_url, prompt: effectivePrompt }),
+        body: JSON.stringify({ imageUrl: image.secure_url, prompt: effectivePrompt, apiKey: apiKey }),
       });
 
       const data = await response.json();

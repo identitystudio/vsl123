@@ -735,11 +735,11 @@ export function SlideEditPanel({
 
   return (
     <>
-      {/* Project Overview Sidebar (Left Side - Fixed Overlay) */}
+      {/* Project Overview Sidebar (Left Side - Fixed) */}
       {showPreviewAll && allSlides && (
         <div className="fixed left-0 top-14 bottom-0 w-[320px] bg-white border-r border-gray-200 shadow-xl z-50 flex flex-col animate-in slide-in-from-left duration-300">
           {/* Sidebar Header */}
-          <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white shrink-0">
+          <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 bg-white">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-black" />
               <span className="font-bold text-sm text-black uppercase tracking-wide">Overview</span>
@@ -833,9 +833,8 @@ export function SlideEditPanel({
         </div>
       )}
 
-      {/* Main Editor Card (Fixed: Removed the left margin shift) */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-        
+      {/* Main Editor Card - Shifted when sidebar is open */}
+      <div className={`bg-white rounded-xl border border-gray-200 p-6 space-y-6 transition-all duration-300 ease-in-out ${showPreviewAll ? 'ml-[330px]' : ''}`}>
         {/* Save/Cancel + Navigation — top of panel */}
         <div className="space-y-3 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between">
@@ -875,13 +874,15 @@ export function SlideEditPanel({
             >
               &#x2713; Save &amp; Next &rarr;
             </Button>
-            </div>
           </div>
         </div>
+      </div>
 
+
+      {/* Main Layout: Editor (Right) */}
+      <div className={`transition-all duration-300 ease-in-out ${showPreviewAll ? 'pl-[340px]' : ''}`}>
         {/* Editor Controls */}
         <div className="flex-1 space-y-6">
-          
           {/* Text Content */}
           <div>
             <div className="flex items-center gap-2 mb-3">
@@ -890,484 +891,408 @@ export function SlideEditPanel({
               <span className="text-xs text-gray-400">(click words to style)</span>
             </div>
 
-            {editingText ? (
-              <div className="space-y-2">
-                <Textarea
-                  value={textValue}
-                  onChange={(e) => setTextValue(e.target.value)}
-                  className="min-h-[80px] text-sm"
-                />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleTextSave}>
-                    Save Text
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setEditingText(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="p-3 rounded-lg border border-gray-100 text-sm leading-relaxed cursor-text"
-                onClick={() => setEditingText(true)}
+        {editingText ? (
+          <div className="space-y-2">
+            <Textarea
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              className="min-h-[80px] text-sm"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleTextSave}>
+                Save Text
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditingText(false)}
               >
-                {words.map((word, i) => {
-                  const cleanWord = word.replace(/[.,!?;:'"()]/g, '');
-                  const isBold = slide.boldWords?.includes(cleanWord);
-                  const isUnderlined = slide.underlineWords?.includes(cleanWord);
-                  const isRed = slide.redWords?.includes(cleanWord);
-                  const isCircled = slide.circleWords?.includes(cleanWord);
-
-                  return (
-                    <span
-                      key={i}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleWordClick(word);
-                      }}
-                      className={`cursor-pointer hover:bg-gray-100 rounded px-0.5 ${
-                        isBold ? 'font-bold' : ''
-                      } ${isUnderlined ? 'underline' : ''} ${
-                        isRed ? 'text-red-600 underline' : ''
-                      } ${isCircled ? 'text-red-600' : ''}`}
-                      title={getEmphasisLabel(cleanWord, slide)}
-                    >
-                      {word}{' '}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Word Styling Controls */}
-          <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={handleAiStyleWords}
-              disabled={aiStylingWords}
-            >
-              {aiStylingWords ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="w-3.5 h-3.5" />
-              )}
-              AI Style
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={handleBoldAll}
-            >
-              <Bold className="w-3.5 h-3.5" />
-              Bold All
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1 text-gray-400 hover:text-gray-600"
-              onClick={handleClearEmphasis}
-            >
-              <X className="w-3.5 h-3.5" />
-              Clear
-            </Button>
-            <span className="text-xs">Click words to style manually</span>
-          </div>
-
-          {/* Slide Styling */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span>&#x1F3A8;</span>
-              <span className="font-semibold text-sm">Slide Styling</span>
+                Cancel
+              </Button>
             </div>
+          </div>
+        ) : (
+          <div
+            className="p-3 rounded-lg border border-gray-100 text-sm leading-relaxed cursor-text"
+            onClick={() => setEditingText(true)}
+          >
+            {words.map((word, i) => {
+              const cleanWord = word.replace(/[.,!?;:'"()]/g, '');
+              const isBold = slide.boldWords?.includes(cleanWord);
+              const isUnderlined = slide.underlineWords?.includes(cleanWord);
+              const isRed = slide.redWords?.includes(cleanWord);
+              const isCircled = slide.circleWords?.includes(cleanWord);
 
-            {/* Quick Presets */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm text-gray-500">Quick Presets:</span>
-              <Select
-                value={currentPreset}
-                onValueChange={(v) => handlePresetChange(v as PresetType)}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRESETS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Background / Text Color / Text Size */}
-            <div className="grid grid-cols-3 gap-4">
-              {/* Background */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Background</span>
-                <div className="flex gap-1">
-                  {(['white', 'dark', 'image'] as const).map((bg) => (
-                    <button
-                      key={bg}
-                      onClick={() => {
-                        if (bg === 'image') {
-                          handlePresetChange('image-backdrop');
-                        } else {
-                          onUpdate({
-                            ...slide,
-                            headshot: null,
-                            style: {
-                              ...slide.style,
-                              background: bg,
-                              textColor: bg === 'dark' ? 'white' : 'black',
-                            },
-                          });
-                        }
-                      }}
-                      className={`px-3 py-1.5 text-xs rounded-md border capitalize ${
-                        slide.style.background === bg ||
-                        (bg === 'image' && (slide.style.background === 'image' || slide.style.background === 'split'))
-                          ? 'bg-black text-white border-black'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {bg === 'dark' ? 'Dark' : bg === 'image' ? 'Image' : 'White'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Text Color */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Text Color</span>
-                <div className="flex gap-1">
-                  {(['white', 'black'] as const).map((color) => (
-                    <button
-                      key={color}
-                      onClick={() =>
-                        onUpdate({
-                          ...slide,
-                          style: { ...slide.style, textColor: color },
-                        })
-                      }
-                      className={`px-4 py-1.5 text-xs rounded-md border capitalize ${
-                        slide.style.textColor === color
-                          ? color === 'black'
-                            ? 'bg-black text-white border-black'
-                            : 'bg-white text-black border-black'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {color}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Text Size */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Text Size</span>
-                <Select
-                  value={String(slide.style.textSize)}
-                  onValueChange={(v) =>
-                    onUpdate({
-                      ...slide,
-                      style: { ...slide.style, textSize: Number(v) },
-                    })
-                  }
+              return (
+                <span
+                  key={i}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleWordClick(word);
+                  }}
+                  className={`cursor-pointer hover:bg-gray-100 rounded px-0.5 ${
+                    isBold ? 'font-bold' : ''
+                  } ${isUnderlined ? 'underline' : ''} ${
+                    isRed ? 'text-red-600 underline' : ''
+                  } ${isCircled ? 'text-red-600' : ''}`}
+                  title={getEmphasisLabel(cleanWord, slide)}
                 >
-                  <SelectTrigger className="w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TEXT_SIZES.map((size) => (
-                      <SelectItem key={size} value={String(size)}>
-                        {size}px
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+                  {word}{' '}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
+      {/* Word Styling Controls */}
+      <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          onClick={handleAiStyleWords}
+          disabled={aiStylingWords}
+        >
+          {aiStylingWords ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5" />
+          )}
+          AI Style
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          onClick={handleBoldAll}
+        >
+          <Bold className="w-3.5 h-3.5" />
+          Bold All
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-gray-400 hover:text-gray-600"
+          onClick={handleClearEmphasis}
+        >
+          <X className="w-3.5 h-3.5" />
+          Clear
+        </Button>
+        <span className="text-xs">Click words to style manually</span>
+      </div>
+
+      {/* Slide Styling */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span>&#x1F3A8;</span>
+          <span className="font-semibold text-sm">Slide Styling</span>
+        </div>
+
+        {/* Quick Presets */}
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-sm text-gray-500">Quick Presets:</span>
+          <Select
+            value={currentPreset}
+            onValueChange={(v) => handlePresetChange(v as PresetType)}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRESETS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Background / Text Color / Text Size */}
+        <div className="grid grid-cols-3 gap-4">
+          {/* Background */}
+          <div>
+            <span className="text-xs text-gray-500 mb-2 block">Background</span>
+            <div className="flex gap-1">
+              {(['white', 'dark', 'image'] as const).map((bg) => (
+                <button
+                  key={bg}
+                  onClick={() => {
+                    if (bg === 'image') {
+                      handlePresetChange('image-backdrop');
+                    } else {
+                      onUpdate({
+                        ...slide,
+                        headshot: null,
+                        style: {
+                          ...slide.style,
+                          background: bg,
+                          textColor: bg === 'dark' ? 'white' : 'black',
+                        },
+                      });
+                    }
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-md border capitalize ${
+                    slide.style.background === bg ||
+                    (bg === 'image' && (slide.style.background === 'image' || slide.style.background === 'split'))
+                      ? 'bg-black text-white border-black'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {bg === 'dark' ? 'Dark' : bg === 'image' ? 'Image' : 'White'}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Emotional Context */}
-          {(slide.emotionalBeat || slide.visualPrompt) && (
-            <div className="space-y-3 pt-4 border-t border-gray-100">
-               <div className="flex items-center gap-2 mb-2">
-                 <span className="text-lg">❤️</span>
-                 <span className="font-semibold text-sm">Emotional Context</span>
-               </div>
-               
-               <div className="bg-purple-50 rounded-lg p-3 space-y-2 border border-purple-100">
-                 {slide.emotionalBeat && (
-                    <div className="flex justify-between items-center mb-1">
-                       <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
-                         {slide.emotionalBeat}
-                       </span>
-                       {slide.emotion && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-white rounded-full border border-purple-200 text-purple-600 font-medium">
-                            {slide.emotion}
-                          </span>
-                       )}
-                    </div>
-                 )}
-                 
-                 {slide.visualPrompt && (
-                   <div className="pt-1">
-                      <div className="flex items-center gap-1 mb-0.5">
-                        <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Visual Prompt</span>
-                      </div>
-                      <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
-                        "{slide.visualPrompt}"
-                      </p>
-                   </div>
-                 )}
-
-                 {slide.videoPrompt && (
-                   <div className="pt-1">
-                      <div className="flex items-center gap-1 mb-0.5">
-                        <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Video Prompt</span>
-                      </div>
-                      <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
-                        "{slide.videoPrompt}"
-                      </p>
-                   </div>
-                 )}
-               </div>
-            </div>
-          )}
-
-          {/* Background Image Controls */}
-          {slide.hasBackgroundImage && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span>&#x1F5BC;</span>
-                  <span className="font-semibold text-sm">Background Image</span>
-                  {fetchingImage && (
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:text-red-600 gap-1"
+          {/* Text Color */}
+          <div>
+            <span className="text-xs text-gray-500 mb-2 block">Text Color</span>
+            <div className="flex gap-1">
+              {(['white', 'black'] as const).map((color) => (
+                <button
+                  key={color}
                   onClick={() =>
                     onUpdate({
                       ...slide,
-                      hasBackgroundImage: false,
-                      backgroundImage: undefined,
-                      style: {
-                        ...slide.style,
-                        background: 'white',
-                        textColor: 'black',
-                      },
+                      style: { ...slide.style, textColor: color },
                     })
                   }
+                  className={`px-4 py-1.5 text-xs rounded-md border capitalize ${
+                    slide.style.textColor === color
+                      ? color === 'black'
+                        ? 'bg-black text-white border-black'
+                        : 'bg-white text-black border-black'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remove
-                </Button>
-              </div>
+                  {color}
+                </button>
+              ))}
+            </div>
+          </div>
 
-              {/* 3 Display Mode buttons */}
-              <div className="mb-3">
-                <span className="text-xs text-gray-500 mb-2 block">Image Style</span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleDisplayMode('blurred')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
-                      currentDisplayMode === 'blurred'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="font-medium mb-0.5">Blurred</div>
-                    <div className="text-gray-400">Soft image behind text</div>
-                  </button>
-                  <button
-                    onClick={() => handleDisplayMode('crisp')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
-                      currentDisplayMode === 'crisp'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="font-medium mb-0.5">Crisp</div>
-                    <div className="text-gray-400">Clear image, text on top</div>
-                  </button>
-                  <button
-                    onClick={() => handleDisplayMode('split')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
-                      currentDisplayMode === 'split'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="font-medium mb-0.5">Split</div>
-                    <div className="text-gray-400">Image top, text bottom</div>
-                  </button>
-                </div>
-              </div>
+          {/* Text Size */}
+          <div>
+            <span className="text-xs text-gray-500 mb-2 block">Text Size</span>
+            <Select
+              value={String(slide.style.textSize)}
+              onValueChange={(v) =>
+                onUpdate({
+                  ...slide,
+                  style: { ...slide.style, textSize: Number(v) },
+                })
+              }
+            >
+              <SelectTrigger className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEXT_SIZES.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}px
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-              {/* Crispness slider (blurred mode) / Transparency slider (crisp mode) */}
-              {slide.backgroundImage && currentDisplayMode !== 'split' && (
-                <div className="space-y-2 mb-3">
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>{currentDisplayMode === 'blurred' ? 'Crispness:' : 'Transparency:'}</span>
-                    <span>{slide.backgroundImage.opacity}%</span>
-                  </div>
-                  <Slider
-                    value={[slide.backgroundImage.opacity]}
-                    min={0}
-                    max={100}
-                    step={5}
-                    onValueChange={([v]) =>
-                      onUpdate({
-                        ...slide,
-                        backgroundImage: {
-                          ...slide.backgroundImage!,
-                          opacity: v,
-                        },
-                      })
-                    }
-                  />
-                </div>
-              )}
+      </div>
 
-              {/* Image search */}
-              {showImageSearch ? (
-                <div className="flex gap-2 mb-3">
-                  <Input
-                    value={imageSearchQuery}
-                    onChange={(e) => setImageSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleImageSearch()}
-                    placeholder="Search for images..."
-                    className="text-sm"
-                    autoFocus
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleImageSearch}
-                    disabled={fetchingImage || !imageSearchQuery.trim()}
-                  >
-                    {fetchingImage ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setShowImageSearch(false);
-                      setImageSearchQuery('');
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : null}
-
-              {/* Action buttons */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setShowImageSearch(true)}
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    Search Image
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setAiImageOpen(true)}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Generate AI Image
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1"
-                    onClick={() => bgImageUploadRef.current?.click()}
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    Upload
-                  </Button>
-                  <Button
-                    variant={showAiPrompt ? "secondary" : "ghost"}
-                    size="sm"
-                    className="gap-1.5 ml-auto"
-                    onClick={() => setShowAiPrompt(!showAiPrompt)}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    AI Prompt
-                  </Button>
-                </div>
-
-                {/* AI Search Prompt */}
-                {showAiPrompt && (
-                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-gray-500">
-                        Smart Pexels Search
+      {/* Emotional Context */}
+      {(slide.emotionalBeat || slide.visualPrompt) && (
+        <div className="space-y-3 pt-4 border-t border-gray-100">
+           <div className="flex items-center gap-2 mb-2">
+             <span className="text-lg">❤️</span>
+             <span className="font-semibold text-sm">Emotional Context</span>
+           </div>
+           
+           <div className="bg-purple-50 rounded-lg p-3 space-y-2 border border-purple-100">
+             {slide.emotionalBeat && (
+                <div className="flex justify-between items-center mb-1">
+                   <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
+                     {slide.emotionalBeat}
+                   </span>
+                   {slide.emotion && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-white rounded-full border border-purple-200 text-purple-600 font-medium">
+                        {slide.emotion}
                       </span>
-                      {aiPrompt && (
-                        <button
-                          onClick={() => setAiPrompt('')}
-                          className="text-[10px] text-red-500 hover:underline"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <Textarea
-                      value={aiPrompt}
-                      onChange={(e) => setAiPrompt(e.target.value)}
-                      placeholder="Describe what you want (e.g. 'young people, no suits, bright colors')..."
-                      className="min-h-[60px] text-sm bg-white"
-                    />
-                    <Button
-                      size="sm"
-                      className="w-full gap-2"
-                      onClick={() => autoFetchImage(slide, slide, {})}
-                      disabled={fetchingImage || !aiPrompt.trim()}
-                    >
-                      {fetchingImage ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-3.5 h-3.5" />
-                      )}
-                      Update Image with Prompt
-                    </Button>
-                    <p className="text-[10px] text-gray-400">
-                      Refines the search term using AI to find better Pexels matches.
-                    </p>
+                   )}
+                </div>
+             )}
+             
+             {slide.visualPrompt && (
+               <div className="pt-1">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Visual Prompt</span>
                   </div>
-                )}
+                  <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
+                    "{slide.visualPrompt}"
+                  </p>
+               </div>
+             )}
+
+             {slide.videoPrompt && (
+               <div className="pt-1">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider">Video Prompt</span>
+                  </div>
+                  <p className="text-xs text-gray-700 leading-snug italic bg-white/50 p-2 rounded border border-purple-100/50">
+                    "{slide.videoPrompt}"
+                  </p>
+               </div>
+             )}
+           </div>
+        </div>
+      )}
+
+      {/* Background Image Controls */}
+      {slide.hasBackgroundImage && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span>&#x1F5BC;</span>
+              <span className="font-semibold text-sm">Background Image</span>
+              {fetchingImage && (
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-red-500 hover:text-red-600 gap-1"
+              onClick={() =>
+                onUpdate({
+                  ...slide,
+                  hasBackgroundImage: false,
+                  backgroundImage: undefined,
+                  style: {
+                    ...slide.style,
+                    background: 'white',
+                    textColor: 'black',
+                  },
+                })
+              }
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remove
+            </Button>
+          </div>
+
+          {/* 3 Display Mode buttons */}
+          <div className="mb-3">
+            <span className="text-xs text-gray-500 mb-2 block">Image Style</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDisplayMode('blurred')}
+                className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                  currentDisplayMode === 'blurred'
+                    ? 'border-black bg-gray-50 font-medium'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium mb-0.5">Blurred</div>
+                <div className="text-gray-400">Soft image behind text</div>
+              </button>
+              <button
+                onClick={() => handleDisplayMode('crisp')}
+                className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                  currentDisplayMode === 'crisp'
+                    ? 'border-black bg-gray-50 font-medium'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium mb-0.5">Crisp</div>
+                <div className="text-gray-400">Clear image, text on top</div>
+              </button>
+              <button
+                onClick={() => handleDisplayMode('split')}
+                className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                  currentDisplayMode === 'split'
+                    ? 'border-black bg-gray-50 font-medium'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium mb-0.5">Split</div>
+                <div className="text-gray-400">Image top, text bottom</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Crispness slider (blurred mode) / Transparency slider (crisp mode) */}
+          {slide.backgroundImage && currentDisplayMode !== 'split' && (
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>{currentDisplayMode === 'blurred' ? 'Crispness:' : 'Transparency:'}</span>
+                <span>{slide.backgroundImage.opacity}%</span>
               </div>
+              <Slider
+                value={[slide.backgroundImage.opacity]}
+                min={0}
+                max={100}
+                step={5}
+                onValueChange={([v]) =>
+                  onUpdate({
+                    ...slide,
+                    backgroundImage: {
+                      ...slide.backgroundImage!,
+                      opacity: v,
+                    },
+                  })
+                }
+              />
             </div>
           )}
 
-          {/* Generate AI Image (when no background image) */}
-          {!slide.hasBackgroundImage && (
-            <div>
+          {/* Image search */}
+          {showImageSearch ? (
+            <div className="flex gap-2 mb-3">
+              <Input
+                value={imageSearchQuery}
+                onChange={(e) => setImageSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleImageSearch()}
+                placeholder="Search for images..."
+                className="text-sm"
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={handleImageSearch}
+                disabled={fetchingImage || !imageSearchQuery.trim()}
+              >
+                {fetchingImage ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setShowImageSearch(false);
+                  setImageSearchQuery('');
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : null}
+
+          {/* Action buttons */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShowImageSearch(true)}
+              >
+                <Search className="w-3.5 h-3.5" />
+                Search Image
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1377,145 +1302,220 @@ export function SlideEditPanel({
                 <Sparkles className="w-3.5 h-3.5" />
                 Generate AI Image
               </Button>
-            </div>
-          )}
-
-          {/* Hidden headshot file input */}
-          <input
-            ref={headshotRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleHeadshotUpload}
-          />
-
-          {/* Hidden background image file input */}
-          <input
-            ref={bgImageUploadRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleBgImageUpload}
-          />
-
-          {/* Headshot controls (when headshot preset is active) */}
-          {slide.headshot && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span>&#x1F464;</span>
-                <span className="font-semibold text-sm">Headshot</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => headshotRef.current?.click()}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  {slide.headshot.imageUrl ? 'Change Photo' : 'Upload Photo'}
-                </Button>
-                {slide.headshot.imageUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-500 hover:text-red-600 gap-1"
-                    onClick={() =>
-                      onUpdate({
-                        ...slide,
-                        headshot: { ...(slide.headshot || {}), imageUrl: undefined },
-                      })
-                    }
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Remove
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Infographic Controls */}
-          {slide.isInfographic && (
-            <div>
-              {/* Visual Preview */}
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-center">
-                  <div className="text-4xl">
-                    {slide.infographicVisual ? (
-                      slide.infographicVisual.type === 'emoji' ? (
-                        slide.infographicVisual.value
-                      ) : slide.infographicVisual.type === 'svg' ? (
-                        <div
-                          className="w-16 h-16"
-                          dangerouslySetInnerHTML={{ __html: slide.infographicVisual.value }}
-                        />
-                      ) : (
-                        slide.infographicVisual.value
-                      )
-                    ) : null}
-                  </div>
-                </div>
-
-              {/* Remove infographic mode */}
-              <div className="mt-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:text-red-600 gap-1"
-                  onClick={() =>
-                    onUpdate({
-                      ...slide,
-                      isInfographic: false,
-                      infographicCaptions: undefined,
-                      infographicVisual: undefined,
-                      absorbedSlideIds: undefined,
-                    })
-                  }
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remove Infographic Mode
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Apply to all Toggle */}
-          <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setApplyToAll(!applyToAll)}
-              className="flex items-center gap-3 group px-1 cursor-pointer"
-              type="button"
-            >
-              <div 
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out ${
-                  applyToAll ? 'bg-black' : 'bg-gray-200'
-                }`}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() => bgImageUploadRef.current?.click()}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
-                    applyToAll ? 'translate-x-6' : 'translate-x-1'
-                  }`}
+                <Upload className="w-3.5 h-3.5" />
+                Upload
+              </Button>
+              <Button
+                variant={showAiPrompt ? "secondary" : "ghost"}
+                size="sm"
+                className="gap-1.5 ml-auto"
+                onClick={() => setShowAiPrompt(!showAiPrompt)}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                AI Prompt
+              </Button>
+            </div>
+
+            {/* AI Search Prompt */}
+            {showAiPrompt && (
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">
+                    Smart Pexels Search
+                  </span>
+                  {aiPrompt && (
+                    <button
+                      onClick={() => setAiPrompt('')}
+                      className="text-[10px] text-red-500 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <Textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Describe what you want (e.g. 'young people, no suits, bright colors')..."
+                  className="min-h-[60px] text-sm bg-white"
                 />
+                <Button
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => autoFetchImage(slide, slide, {})}
+                  disabled={fetchingImage || !aiPrompt.trim()}
+                >
+                  {fetchingImage ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  Update Image with Prompt
+                </Button>
+                <p className="text-[10px] text-gray-400">
+                  Refines the search term using AI to find better Pexels matches.
+                </p>
               </div>
-              <span className="text-sm font-semibold text-gray-700 group-hover:text-black transition-colors">
-                Apply style to all remaining slides
-              </span>
-            </button>
+            )}
           </div>
+        </div>
+      )}
 
-        </div> {/* End of Editor Controls Wrapper */}
+      {/* Generate AI Image (when no background image) */}
+      {!slide.hasBackgroundImage && (
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setAiImageOpen(true)}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Generate AI Image
+          </Button>
+        </div>
+      )}
 
-        {/* AI Image Generation Dialog */}
-        <AiImageDialog
-          open={aiImageOpen}
-          onClose={() => setAiImageOpen(false)}
-          slideText={slide.fullScriptText}
-          imageKeyword={slide.imageKeyword}
-          sceneTitle={slide.sceneTitle}
-          emotion={slide.emotion}
-          onImageGenerated={handleAiImageGenerated}
-        />
-        
+      {/* Hidden headshot file input */}
+      <input
+        ref={headshotRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleHeadshotUpload}
+      />
+
+      {/* Hidden background image file input */}
+      <input
+        ref={bgImageUploadRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleBgImageUpload}
+      />
+
+      {/* Headshot controls (when headshot preset is active) */}
+      {slide.headshot && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <span>&#x1F464;</span>
+            <span className="font-semibold text-sm">Headshot</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => headshotRef.current?.click()}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              {slide.headshot.imageUrl ? 'Change Photo' : 'Upload Photo'}
+            </Button>
+            {slide.headshot.imageUrl && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-500 hover:text-red-600 gap-1"
+                onClick={() =>
+                  onUpdate({
+                    ...slide,
+                    headshot: { ...(slide.headshot || {}), imageUrl: undefined },
+                  })
+                }
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Infographic Controls */}
+      {slide.isInfographic && (
+        <div>
+          {/* Visual Preview */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-center">
+              <div className="text-4xl">
+                {slide.infographicVisual ? (
+                  slide.infographicVisual.type === 'emoji' ? (
+                    slide.infographicVisual.value
+                  ) : slide.infographicVisual.type === 'svg' ? (
+                    <div
+                      className="w-16 h-16"
+                      dangerouslySetInnerHTML={{ __html: slide.infographicVisual.value }}
+                    />
+                  ) : (
+                    slide.infographicVisual.value
+                  )
+                ) : null}
+              </div>
+            </div>
+
+          {/* Remove infographic mode */}
+          <div className="mt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-red-500 hover:text-red-600 gap-1"
+              onClick={() =>
+                onUpdate({
+                  ...slide,
+                  isInfographic: false,
+                  infographicCaptions: undefined,
+                  infographicVisual: undefined,
+                  absorbedSlideIds: undefined,
+                })
+              }
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remove Infographic Mode
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Apply to all Toggle */}
+      <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+        <button
+          onClick={() => setApplyToAll(!applyToAll)}
+          className="flex items-center gap-3 group px-1 cursor-pointer"
+          type="button"
+        >
+          <div 
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out ${
+              applyToAll ? 'bg-black' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                applyToAll ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </div>
+          <span className="text-sm font-semibold text-gray-700 group-hover:text-black transition-colors">
+            Apply style to all remaining slides
+          </span>
+        </button>
+      </div>
+
+      {/* AI Image Generation Dialog */}
+      <AiImageDialog
+        open={aiImageOpen}
+        onClose={() => setAiImageOpen(false)}
+        slideText={slide.fullScriptText}
+        imageKeyword={slide.imageKeyword}
+        sceneTitle={slide.sceneTitle}
+        emotion={slide.emotion}
+        onImageGenerated={handleAiImageGenerated}
+      />
+        </div>
+      </div>
       </div>
     </>
   );
