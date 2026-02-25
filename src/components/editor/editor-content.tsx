@@ -78,6 +78,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const [autoPipelineLoading, setAutoPipelineLoading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<'analyzing' | 'imaging' | 'motion' | 'finishing'>('analyzing');
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const [showEmotionalBeats, setShowEmotionalBeats] = useState(false);
   const autoPipelineRunningRef = useRef(false);
 
   useEffect(() => {
@@ -697,6 +698,8 @@ export function EditorContent({ projectId }: EditorContentProps) {
               savedInfographicImages={project.infographic_images}
               savedInfographicPrompt={project.infographic_prompt}
               savedInfographicVideos={project.infographic_videos}
+              onToggleEmotionalBeats={() => setShowEmotionalBeats(prev => !prev)}
+              showEmotionalBeats={showEmotionalBeats}
             />
           )}
           {currentStep === 3 && (
@@ -727,7 +730,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
         </main>
         
         {/* Right Sidebar - Emotional Beats */}
-        {isEditingSlide && (
+        {isEditingSlide && showEmotionalBeats && (
           <EmotionalBeatsSidebar
               projectId={projectId}
               emotionalBeats={emotionalBeats}

@@ -24,6 +24,8 @@ interface SlideReviewerProps {
   savedInfographicImages?: any[];
   savedInfographicPrompt?: string;
   savedInfographicVideos?: Record<string, { uri: string; data?: string }>;
+  onToggleEmotionalBeats?: () => void;
+  showEmotionalBeats?: boolean;
 }
 
 const UNDERLINE_CYCLE: UnderlineStyle[] = [
@@ -151,6 +153,8 @@ export function SlideReviewer({
   savedInfographicImages,
   savedInfographicPrompt,
   savedInfographicVideos,
+  onToggleEmotionalBeats,
+  showEmotionalBeats,
 }: SlideReviewerProps) {
   const [slides, setSlides] = useState<Slide[]>(initialSlides);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -818,6 +822,8 @@ export function SlideReviewer({
                 setEditing(true);
                 setEditSlide({ ...slides[index] });
               }}
+              onToggleEmotionalBeats={onToggleEmotionalBeats}
+              showEmotionalBeats={showEmotionalBeats}
             />
           </div>
         </div>

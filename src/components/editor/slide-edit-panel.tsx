@@ -14,6 +14,7 @@ import {
   Check,
   Pencil,
   ChevronLeft,
+  Heart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -54,6 +55,8 @@ interface SlideEditPanelProps {
   onSkip?: () => void;
   onSkipTo?: (index: number) => void;
   canGoPrevious?: boolean;
+  onToggleEmotionalBeats?: () => void;
+  showEmotionalBeats?: boolean;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -253,6 +256,8 @@ export function SlideEditPanel({
   onSkip,
   onSkipTo,
   canGoPrevious = false,
+  onToggleEmotionalBeats,
+  showEmotionalBeats = false,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -852,6 +857,17 @@ export function SlideEditPanel({
                 <BarChart3 className="w-3 h-3" />
                 {showPreviewAll ? 'Hide Preview' : 'Preview project'}
               </Button>
+              {onToggleEmotionalBeats && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onToggleEmotionalBeats}
+                  className={`gap-1.5 h-7 text-[10px] px-2 uppercase tracking-wider font-bold ${showEmotionalBeats ? 'bg-black text-white hover:bg-black/90' : 'border-gray-200 text-gray-500'}`}
+                >
+                  <Heart className="w-3 h-3" />
+                  Emotional Beats
+                </Button>
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={onCancel} className="gap-1 h-8 text-xs">
