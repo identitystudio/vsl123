@@ -145,10 +145,15 @@ export function useDeleteProject() {
       if (error) throw error;
     },
     onSuccess: (_, projectId) => {
-      // Optimistically remove from cache
-      queryClient.setQueriesData({ queryKey: ['projects'] }, (old: VslProject[] | undefined) => {
-        if (!old) return old;
-        return old.filter((p) => p.id !== projectId);
+      // Optimistically remove from cache (InfiniteData structure: { pages: VslProject[][], pageParams: any[] })
+      queryClient.setQueriesData({ queryKey: ['projects'] }, (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: VslProject[]) =>
+            page.filter((p) => p.id !== projectId)
+          ),
+        };
       });
       // Trigger refetch to be sure
       queryClient.invalidateQueries({ queryKey: ['projects'] });
