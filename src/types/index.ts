@@ -14,8 +14,10 @@ export type CircleStyle = 'red-solid' | 'red-dotted' | 'black-solid';
 
 export interface HeadshotSettings {
   imageUrl?: string;
+  videoUrl?: string; // New field for video headshots
   name?: string;
   title?: string;
+  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'inline'; // New field for positioning
 }
 
 export interface BackgroundImage {
@@ -74,6 +76,16 @@ export interface Slide {
   infographicCaptions?: string[];        // Lines that cycle as captions
   infographicVisual?: InfographicVisual; // The visual element (SVG/icon/emoji)
   absorbedSlideIds?: string[];           // IDs of slides bundled into this one
+
+  // Talking Head Avatar
+  talkingHeadImage?: string;       // URL/dataURL of the uploaded avatar image
+  talkingHeadVideoUrl?: string;    // URL of the generated talking head video
+  talkingHeadPrompt?: string;      // Prompt used for avatar generation
+  talkingHeadAudioUrl?: string;    // Audio URL for lip-sync dubbing
+  talkingHeadTaskId?: string;      // PiAPI task ID for polling (cleared after completion)
+  talkingHeadAsHeadshot?: boolean; // Toggles displaying the generated video as a floating headshot
+  talkingHeadPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'inline'; // Position for floating headshot
+  talkingHeadSize?: number;        // Size of the floating headshot in pixels (default 160)
 
   // Metadata
   sceneNumber?: number;

@@ -141,6 +141,28 @@ function WordSpan({
   );
 }
 
+function getHeadshotStyle(position: string | undefined, scale: number): React.CSSProperties {
+  if (!position || position === 'inline') {
+    return { position: 'relative' };
+  }
+  
+  const baseStyle: React.CSSProperties = { position: 'absolute' };
+  const margin = 24 * scale;
+
+  switch (position) {
+    case 'top-left':
+      return { ...baseStyle, top: margin, left: margin };
+    case 'top-right':
+      return { ...baseStyle, top: margin, right: margin };
+    case 'bottom-left':
+      return { ...baseStyle, bottom: margin, left: margin };
+    case 'bottom-right':
+      return { ...baseStyle, bottom: margin, right: margin };
+    default:
+      return { position: 'relative' };
+  }
+}
+
 export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDrag, onImageDoubleClick, onWordClick }: SlidePreviewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
@@ -369,10 +391,27 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
           </div>
         ) : (
           <>
-            {/* Headshot — inline in the flow, not absolute */}
+            {/* Headshot */}
             {slide.headshot && (
-              <div style={{ marginBottom: `${8 * scale}px` }}>
-                {slide.headshot.imageUrl ? (
+              <div 
+                style={{ 
+                  ...getHeadshotStyle(slide.headshot.position, scale),
+                  zIndex: 20,
+                  marginBottom: !slide.headshot.position || slide.headshot.position === 'inline' ? `${8 * scale}px` : 0 
+                }}
+              >
+                {slide.headshot.videoUrl ? (
+                  <video
+                    src={slide.headshot.videoUrl}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className={`rounded-full object-cover border-2 border-gray-200 ${onHeadshotClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                    style={{ width: 160 * scale, height: 160 * scale }}
+                    onClick={onHeadshotClick}
+                  />
+                ) : slide.headshot.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={slide.headshot.imageUrl}
@@ -391,6 +430,27 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
                     <span className="text-gray-400 font-medium" style={{ fontSize: `${10 * scale}px`, marginTop: `${4 * scale}px` }}>Upload</span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Talking Head Video as Floating Headshot */}
+            {slide.talkingHeadAsHeadshot && slide.talkingHeadVideoUrl && (
+              <div 
+                style={{ 
+                  ...getHeadshotStyle(slide.talkingHeadPosition, scale),
+                  zIndex: 25,
+                  marginBottom: !slide.talkingHeadPosition || slide.talkingHeadPosition === 'inline' ? `${8 * scale}px` : 0 
+                }}
+              >
+                <video
+                  src={slide.talkingHeadVideoUrl}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="rounded-full object-cover border-2 border-indigo-400 shadow-lg"
+                  style={{ width: (slide.talkingHeadSize || 160) * scale, height: (slide.talkingHeadSize || 160) * scale }}
+                />
               </div>
             )}
 
@@ -436,6 +496,30 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
           </>
         )}
       </div>
+
+      {/* Talking Head Avatar indicator */}
+      {slide.talkingHeadVideoUrl && (
+        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg"
+          style={{ fontSize: `${10 * scale}px` }}
+        >
+          <span style={{ fontSize: `${12 * scale}px` }}>🗣️</span>
+          <span className="text-white font-bold uppercase tracking-wider" style={{ fontSize: `${8 * scale}px` }}>
+            Avatar Video
+          </span>
+        </div>
+      )}
+
+      {/* Talking Head Avatar image indicator (uploaded but not yet generated) */}
+      {slide.talkingHeadImage && !slide.talkingHeadVideoUrl && (
+        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-purple-500/70 shadow-lg"
+          style={{ fontSize: `${10 * scale}px` }}
+        >
+          <span style={{ fontSize: `${12 * scale}px` }}>🗣️</span>
+          <span className="text-white font-bold uppercase tracking-wider opacity-80" style={{ fontSize: `${8 * scale}px` }}>
+            Pending
+          </span>
+        </div>
+      )}
     </div>
   );
 }

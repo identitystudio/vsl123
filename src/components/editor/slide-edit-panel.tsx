@@ -15,6 +15,9 @@ import {
   Pencil,
   ChevronLeft,
   Heart,
+  Video,
+  User,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -60,6 +63,7 @@ interface SlideEditPanelProps {
   onTogglePreview?: () => void;
   showPreviewAll?: boolean;
   isSaving?: boolean;
+  onAsyncUpdate?: (slideId: string, updates: Partial<Slide>) => void;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -264,6 +268,7 @@ export function SlideEditPanel({
   onTogglePreview,
   showPreviewAll = false,
   isSaving = false,
+  onAsyncUpdate,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -279,54 +284,128 @@ export function SlideEditPanel({
   const [saving, setSaving] = useState(false);
   const localHeadshotRef = useRef<HTMLInputElement>(null);
 
+  // Talking Head Avatar state
+  const [avatarGenerating, setAvatarGenerating] = useState(false);
+  const [avatarElapsed, setAvatarElapsed] = useState(0);
+  const [avatarAudioUrl, setAvatarAudioUrl] = useState(slide.talkingHeadAudioUrl || slide.audioUrl || '');
+  const [avatarPrompt, setAvatarPrompt] = useState(slide.talkingHeadPrompt || '');
+  const avatarApiKey = localStorage.getItem('vsl123-piapi-key') || '';
+  const [avatarApiKeyLocal, setAvatarApiKey] = useState(avatarApiKey);
+  const avatarImageInputRef = useRef<HTMLInputElement>(null);
+  const avatarVideoInputRef = useRef<HTMLInputElement>(null);
+  const avatarTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load API key from localStorage
+  useEffect(() => {
+    const savedKey = localStorage.getItem('vsl123-piapi-key');
+    if (savedKey) setAvatarApiKey(savedKey);
+  }, []);
+
   // Sync text value when slide changes
   useEffect(() => {
     setTextValue(slide.fullScriptText);
   }, [slide.fullScriptText]);
 
+  // Sync avatar state when slide changes
+  useEffect(() => {
+    setAvatarAudioUrl(slide.talkingHeadAudioUrl || slide.audioUrl || '');
+    setAvatarPrompt(slide.talkingHeadPrompt || '');
+  }, [slide.id]);
+
   const headshotRef = headshotInputRef || localHeadshotRef;
+  const headshotVideoInputRef = useRef<HTMLInputElement>(null);
   const bgImageUploadRef = useRef<HTMLInputElement>(null);
 
-  const handleHeadshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHeadshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
+
+    const uploadToast = toast.loading('Uploading headshot...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'vsl123-headshots');
+
+      const res = await fetch('/api/upload-image', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+
       onUpdate({
         ...slide,
         headshot: {
           ...(slide.headshot || {}),
-          imageUrl: dataUrl,
+          imageUrl: data.url,
         },
       });
-      toast.success('Headshot uploaded!');
-    };
-    reader.readAsDataURL(file);
-    // Reset input so the same file can be re-selected
+      toast.success('Headshot uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      console.error('Headshot upload error:', err);
+      toast.error(err.message || 'Headshot upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    }
     e.target.value = '';
   };
 
-  const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHeadshotVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) {
+      toast.error('Please select a video file');
+      return;
+    }
+
+    const uploadToast = toast.loading('Uploading headshot video...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'vsl123-headshots-video');
+
+      const res = await fetch('/api/upload-video', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+
+      onUpdate({
+        ...slide,
+        headshot: {
+          ...(slide.headshot || {}),
+          videoUrl: data.url,
+        },
+      });
+      toast.success('Headshot video uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      console.error('Headshot video upload error:', err);
+      toast.error(err.message || 'Headshot video upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    }
+    e.target.value = '';
+  };
+
+  const handleBgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
+
+    const uploadToast = toast.loading('Uploading background image...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'vsl123-backgrounds');
+
+      const res = await fetch('/api/upload-image', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+
       onUpdate({
         ...slide,
         hasBackgroundImage: true,
         backgroundImage: {
           ...(slide.backgroundImage || { opacity: 40, blur: 8, displayMode: 'blurred' }),
-          url: dataUrl,
+          url: data.url,
         } as BackgroundImage,
         style: {
           ...slide.style,
@@ -334,9 +413,11 @@ export function SlideEditPanel({
           textColor: 'white',
         },
       });
-      toast.success('Image uploaded!');
-    };
-    reader.readAsDataURL(file);
+      toast.success('Background image uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      console.error('Background image upload error:', err);
+      toast.error(err.message || 'Background upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    }
     e.target.value = '';
   };
 
@@ -736,6 +817,258 @@ export function SlideEditPanel({
       setSaving(false);
     }
   };
+
+  // Talking Head Avatar handlers
+  const MIN_AVATAR_PX = 512;
+
+  const handleAvatarImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    // Read the file to validate dimensions first
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+
+      const img = new window.Image();
+      img.onload = async () => {
+        if (img.naturalWidth < MIN_AVATAR_PX || img.naturalHeight < MIN_AVATAR_PX) {
+          toast.error(
+            `Image too small (${img.naturalWidth}×${img.naturalHeight}px). ` +
+            `Kling AI requires at least ${MIN_AVATAR_PX}×${MIN_AVATAR_PX}px for facial mapping.`
+          );
+          return;
+        }
+
+        // Upload to Cloudinary for permanent storage (avoid storing huge base64 in DB)
+        const uploadToast = toast.loading('Uploading avatar image...');
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('folder', 'vsl123-talking-heads');
+
+          const res = await fetch('/api/upload-image', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Upload failed');
+          }
+
+          const data = await res.json();
+
+          const newSlide = {
+            ...slide,
+            talkingHeadImage: data.url, // Cloudinary URL, not base64!
+          };
+          onUpdate(newSlide);
+          onAsyncUpdate?.(slide.id, { talkingHeadImage: data.url });
+          toast.success(`Avatar image uploaded! (${img.naturalWidth}×${img.naturalHeight}px)`, { id: uploadToast });
+        } catch (err: any) {
+          console.error('Avatar image upload error:', err);
+          toast.error(err.message || 'Avatar upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+        }
+      };
+      img.onerror = () => {
+        toast.error('Failed to load image. Please try another file.');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleAvatarVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) {
+      toast.error('Please select a video file');
+      return;
+    }
+
+    const uploadToast = toast.loading('Uploading custom avatar video...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'vsl123-talking-heads');
+
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Upload failed');
+      }
+
+      const data = await res.json();
+
+      const updates = {
+        talkingHeadVideoUrl: data.url,
+        talkingHeadImage: undefined, // ensure we know it's a custom uploaded video
+        talkingHeadTaskId: undefined,
+      };
+      
+      onUpdate({ ...slide, ...updates });
+      onAsyncUpdate?.(slide.id, updates);
+      toast.success('Custom avatar video uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      console.error('Avatar video upload error:', err);
+      toast.error(err.message || 'Video upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveAvatar = () => {
+    const updates = {
+      talkingHeadImage: undefined,
+      talkingHeadVideoUrl: undefined,
+      talkingHeadPrompt: undefined,
+      talkingHeadAudioUrl: undefined,
+      talkingHeadTaskId: undefined,
+    };
+    onUpdate({ ...slide, ...updates });
+    onAsyncUpdate?.(slide.id, updates);
+    toast.success('Avatar removed');
+  };
+
+  const handleGenerateAvatar = async () => {
+    if (!slide.talkingHeadImage) {
+      toast.error('Upload an avatar face image first');
+      return;
+    }
+    if (!avatarApiKey.trim()) {
+      toast.error('Please enter your PiAPI key');
+      return;
+    }
+
+    // Persist audio URL and prompt to slide immediately (survives refresh)
+    const updates = {
+      talkingHeadAudioUrl: avatarAudioUrl,
+      talkingHeadPrompt: avatarPrompt,
+    };
+    onUpdate({ ...slide, ...updates });
+    onAsyncUpdate?.(slide.id, updates);
+
+    setAvatarGenerating(true);
+
+    try {
+      // Submit task to PiAPI — returns instantly with task_id
+      const response = await fetch('/api/talking-head-avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_url: slide.talkingHeadImage,
+          local_dubbing_url: avatarAudioUrl,
+          prompt: avatarPrompt || 'Person speaks naturally',
+          apiKey: avatarApiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Avatar generation failed');
+      }
+
+      const data = await response.json();
+
+      if (!data.taskId) {
+        throw new Error('No task ID returned from PiAPI');
+      }
+
+      // Save task ID to slide so polling can resume after refresh
+      const updates = {
+        talkingHeadTaskId: data.taskId,
+        talkingHeadAudioUrl: avatarAudioUrl,
+        talkingHeadPrompt: avatarPrompt,
+      };
+      onUpdate({ ...slide, ...updates });
+      onAsyncUpdate?.(slide.id, updates);
+
+      toast.info('🗣️ Avatar generation submitted! Polling for completion — you can continue editing.', {
+        duration: 8000,
+      });
+
+      // Start polling
+      startPolling(data.taskId);
+    } catch (error: any) {
+      console.error('Avatar generation error:', error);
+      toast.error(error.message || 'Failed to generate avatar');
+      setAvatarGenerating(false);
+    }
+  };
+
+  // Poll PiAPI for task completion every 30 seconds
+  const startPolling = (taskId: string) => {
+    setAvatarGenerating(true);
+    setAvatarElapsed(0);
+
+    const startTime = Date.now();
+    avatarTimerRef.current = setInterval(async () => {
+      setAvatarElapsed(Math.floor((Date.now() - startTime) / 1000));
+
+      try {
+        const res = await fetch(
+          `/api/talking-head-avatar-status?taskId=${encodeURIComponent(taskId)}&apiKey=${encodeURIComponent(avatarApiKey)}`
+        );
+        const data = await res.json();
+
+        if (data.status === 'completed' && data.videoUrl) {
+          // Success! Save video URL and clear task ID
+          const updates = {
+            talkingHeadVideoUrl: data.videoUrl,
+            talkingHeadTaskId: undefined,
+          };
+          onUpdate({ ...slide, ...updates });
+          onAsyncUpdate?.(slide.id, updates);
+          toast.success('🎉 Talking head video generated!');
+          stopPolling();
+        } else if (data.status === 'failed' || data.error) {
+          toast.error(data.error || 'Avatar generation failed');
+          const updates = { talkingHeadTaskId: undefined };
+          onUpdate({ ...slide, ...updates });
+          onAsyncUpdate?.(slide.id, updates);
+          stopPolling();
+        }
+        // else: still pending/processing — keep polling
+      } catch (err) {
+        console.error('Polling error:', err);
+        // Don't stop polling on network errors — retry next interval
+      }
+    }, 30000); // Poll every 30 seconds
+  };
+
+  const stopPolling = () => {
+    setAvatarGenerating(false);
+    setAvatarElapsed(0);
+    if (avatarTimerRef.current) {
+      clearInterval(avatarTimerRef.current);
+      avatarTimerRef.current = null;
+    }
+  };
+
+  // Resume polling if slide has an active taskId (e.g. after page refresh)
+  useEffect(() => {
+    if (slide.talkingHeadTaskId && avatarApiKey && !avatarTimerRef.current) {
+      console.log('🔄 Resuming avatar polling for task:', slide.talkingHeadTaskId);
+      toast.info('🔄 Resuming avatar generation check...', { duration: 3000 });
+      startPolling(slide.talkingHeadTaskId);
+    }
+    return () => {
+      // Cleanup polling on unmount
+      if (avatarTimerRef.current) {
+        clearInterval(avatarTimerRef.current);
+        avatarTimerRef.current = null;
+      }
+    };
+  }, [slide.talkingHeadTaskId, avatarApiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const words = slide.fullScriptText.split(/\s+/);
   const currentPreset = (() => {
@@ -1328,6 +1661,15 @@ export function SlideEditPanel({
             className="hidden"
             onChange={handleHeadshotUpload}
           />
+          
+          {/* Hidden headshot video input */}
+          <input
+            ref={headshotVideoInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleHeadshotVideoUpload}
+          />
 
           {/* Hidden background image file input */}
           <input
@@ -1338,14 +1680,32 @@ export function SlideEditPanel({
             onChange={handleBgImageUpload}
           />
 
+          {/* Hidden avatar image file input */}
+          <input
+            ref={avatarImageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarImageUpload}
+          />
+
+          {/* Hidden avatar video file input */}
+          <input
+            ref={avatarVideoInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleAvatarVideoUpload}
+          />
+
           {/* Headshot controls (when headshot preset is active) */}
           {slide.headshot && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
                 <span>&#x1F464;</span>
                 <span className="font-semibold text-sm">Headshot</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -1355,7 +1715,16 @@ export function SlideEditPanel({
                   <Upload className="w-3.5 h-3.5" />
                   {slide.headshot.imageUrl ? 'Change Photo' : 'Upload Photo'}
                 </Button>
-                {slide.headshot.imageUrl && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => headshotVideoInputRef.current?.click()}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  {slide.headshot.videoUrl ? 'Change Video' : 'Upload Video'}
+                </Button>
+                {(slide.headshot.imageUrl || slide.headshot.videoUrl) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1363,15 +1732,45 @@ export function SlideEditPanel({
                     onClick={() =>
                       onUpdate({
                         ...slide,
-                        headshot: { ...(slide.headshot || {}), imageUrl: undefined },
+                        headshot: { ...(slide.headshot || {}), imageUrl: undefined, videoUrl: undefined },
                       })
                     }
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Remove
+                    Clear Media
                   </Button>
                 )}
               </div>
+              
+              {/* Headshot Position Settings */}
+              {(slide.headshot.imageUrl || slide.headshot.videoUrl) && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1.5">Position (Location)</label>
+                  <Select
+                    value={slide.headshot.position || 'inline'}
+                    onValueChange={(val: any) =>
+                      onUpdate({
+                        ...slide,
+                        headshot: {
+                          ...(slide.headshot || {}),
+                          position: val === 'inline' ? undefined : val,
+                        },
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inline">Inline Text (Default)</SelectItem>
+                      <SelectItem value="top-left">Top Left</SelectItem>
+                      <SelectItem value="top-right">Top Right</SelectItem>
+                      <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                      <SelectItem value="bottom-right">Bottom Right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           )}
 
@@ -1418,6 +1817,279 @@ export function SlideEditPanel({
               </div>
             </div>
           )}
+
+          {/* 🗣️ Talking Head Avatar Section */}
+          <div className="space-y-3 pt-4 border-t-2 border-dashed border-indigo-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🗣️</span>
+                <span className="font-semibold text-sm">Talking Head Avatar</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 rounded-full font-bold uppercase tracking-wider">Beta</span>
+              </div>
+              {slide.talkingHeadImage && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:text-red-600 gap-1 h-7 text-xs"
+                  onClick={handleRemoveAvatar}
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Remove
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-start gap-4">
+              {slide.talkingHeadImage ? (
+                <div className="relative group flex-shrink-0">
+                  {/* Distinct purple-indigo gradient border */}
+                  <div className="w-20 h-20 rounded-xl p-[3px] bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 shadow-lg shadow-purple-200/50">
+                    <img
+                      src={slide.talkingHeadImage}
+                      alt="Avatar face"
+                      className="w-full h-full rounded-[9px] object-cover bg-white"
+                    />
+                  </div>
+                  {/* Badge */}
+                  <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-0.5">
+                    <User className="w-2 h-2" />
+                    Avatar
+                  </div>
+                  {/* Hover to change */}
+                  <button
+                    onClick={() => avatarImageInputRef.current?.click()}
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <span className="text-white text-[10px] font-medium">Change</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => avatarImageInputRef.current?.click()}
+                  className="w-20 h-20 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/50 flex flex-col items-center justify-center gap-1 hover:border-purple-400 hover:bg-purple-50 transition-all cursor-pointer flex-shrink-0"
+                >
+                  <Upload className="w-4 h-4 text-purple-400" />
+                  <span className="text-[9px] text-purple-500 font-medium leading-tight text-center">Upload<br/>Face</span>
+                </button>
+              )}
+
+              <div className="flex-1 min-w-0 space-y-2">
+                {/* Audio URL */}
+                <div>
+                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
+                    Audio URL {slide.audioUrl && '(auto-filled)'}
+                  </label>
+                  <Input
+                    value={avatarAudioUrl}
+                    onChange={(e) => setAvatarAudioUrl(e.target.value)}
+                    onBlur={() => {
+                      if (avatarAudioUrl !== (slide.talkingHeadAudioUrl || slide.audioUrl || '')) {
+                        onUpdate({ ...slide, talkingHeadAudioUrl: avatarAudioUrl });
+                      }
+                    }}
+                    placeholder="https://... audio file URL"
+                    className="h-7 text-xs"
+                  />
+                </div>
+
+                {/* Prompt */}
+                <div>
+                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
+                    Prompt
+                  </label>
+                  <Input
+                    value={avatarPrompt}
+                    onChange={(e) => setAvatarPrompt(e.target.value)}
+                    onBlur={() => {
+                      if (avatarPrompt !== (slide.talkingHeadPrompt || '')) {
+                        onUpdate({ ...slide, talkingHeadPrompt: avatarPrompt });
+                      }
+                    }}
+                    placeholder="e.g. Person speaks with confidence"
+                    className="h-7 text-xs"
+                  />
+                </div>
+
+                {/* API Key */}
+                <div>
+                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
+                    🔑 PiAPI Key
+                  </label>
+                  <Input
+                    type="password"
+                    value={avatarApiKeyLocal}
+                    onChange={(e) => {
+                      setAvatarApiKey(e.target.value);
+                      localStorage.setItem('vsl123-piapi-key', e.target.value);
+                    }}
+                    placeholder="Paste your PiAPI key here"
+                    className="h-7 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Save Avatar Settings Button */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+              onClick={() => {
+                const updates = {
+                  talkingHeadAudioUrl: avatarAudioUrl,
+                  talkingHeadPrompt: avatarPrompt,
+                };
+                onUpdate({ ...slide, ...updates });
+                onAsyncUpdate?.(slide.id, updates);
+                toast.success('Avatar settings saved!');
+              }}
+            >
+              <Save className="w-3.5 h-3.5" />
+              Save Avatar Settings
+            </Button>
+
+            {/* Generate Button */}
+            <Button
+              size="sm"
+              className="w-full gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-sm"
+              onClick={handleGenerateAvatar}
+              disabled={!slide.talkingHeadImage || avatarGenerating || !avatarApiKeyLocal.trim()}
+            >
+              {avatarGenerating ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Generating... {avatarElapsed > 0 && `(${Math.floor(avatarElapsed / 60)}:${String(avatarElapsed % 60).padStart(2, '0')})`}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generate Talking Head
+                </>
+              )}
+            </Button>
+
+            {!slide.talkingHeadImage && (
+              <p className="text-[10px] text-gray-400 text-center">
+                Upload a face photo to create a talking head video with lip-sync.
+              </p>
+            )}
+
+            {/* 🎥 Custom Video Upload Separator */}
+            <div className="relative flex items-center py-2">
+              <div className="flex-grow border-t border-gray-200"></div>
+              <span className="flex-shrink-0 mx-4 text-[10px] text-gray-400 font-bold tracking-widest uppercase">OR</span>
+              <div className="flex-grow border-t border-gray-200"></div>
+            </div>
+
+            {/* Custom Video Upload & Preview */}
+            <div className="space-y-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2 border-dashed border-2 border-blue-300 text-blue-600 hover:bg-blue-50"
+                onClick={() => avatarVideoInputRef.current?.click()}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {slide.talkingHeadVideoUrl ? 'Replace Custom Video' : 'Upload Custom Video'}
+              </Button>
+
+              {/* Video Preview */}
+              {slide.talkingHeadVideoUrl && (
+                <div className="rounded-xl overflow-hidden border-2 border-indigo-300 bg-gray-900 shadow-lg shadow-indigo-100/50">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600">
+                    <div className="flex items-center gap-1.5">
+                      <Video className="w-3.5 h-3.5 text-white" />
+                      <span className="text-[11px] text-white font-bold uppercase tracking-wider">
+                        {slide.talkingHeadTaskId ? 'Generated Avatar Video' : 'Custom Uploaded Video'}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-white/70">Click to play</span>
+                  </div>
+                  <video
+                    src={slide.talkingHeadVideoUrl}
+                    controls
+                    poster={slide.talkingHeadImage}
+                    preload="metadata"
+                    className="w-full"
+                    style={{ maxHeight: '220px' }}
+                  />
+                </div>
+              )}
+
+              {/* Headshot Mode Toggle for Talking Head Video */}
+              {slide.talkingHeadVideoUrl && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 mt-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                        checked={!!slide.talkingHeadAsHeadshot}
+                        onChange={(e) => onUpdate({ ...slide, talkingHeadAsHeadshot: e.target.checked })}
+                      />
+                      Display as Floating Headshot
+                    </label>
+                  </div>
+
+                  {slide.talkingHeadAsHeadshot && (
+                    <div className="pt-1">
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">
+                        Headshot Position
+                      </label>
+                      <Select
+                        value={slide.talkingHeadPosition || 'inline'}
+                        onValueChange={(val: any) =>
+                          onUpdate({
+                            ...slide,
+                            talkingHeadPosition: val === 'inline' ? undefined : val,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-sm bg-white">
+                          <SelectValue placeholder="Position" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="inline">Inline Text (Default)</SelectItem>
+                          <SelectItem value="top-left">Top Left</SelectItem>
+                          <SelectItem value="top-right">Top Right</SelectItem>
+                          <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                          <SelectItem value="bottom-right">Bottom Right</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Headshot Size Slider */}
+                  {slide.talkingHeadAsHeadshot && (
+                    <div className="pt-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                          Headshot Size
+                        </label>
+                        <span className="text-[10px] text-gray-400 font-mono">
+                          {slide.talkingHeadSize || 160}px
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="80"
+                        max="400"
+                        step="10"
+                        value={slide.talkingHeadSize || 160}
+                        onChange={(e) =>
+                          onUpdate({
+                            ...slide,
+                            talkingHeadSize: parseInt(e.target.value, 10),
+                          })
+                        }
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Apply to all Toggle */}
           <div className="flex items-center gap-2 pt-4 border-t border-gray-100">

@@ -220,7 +220,8 @@ export function SlideReviewer({
           updatedSlide.backgroundVideoUrl !== editSlide.backgroundVideoUrl ||
           updatedSlide.backgroundImage?.url !== editSlide.backgroundImage?.url ||
           updatedSlide.style.background !== editSlide.style.background ||
-          updatedSlide.style.textColor !== editSlide.style.textColor;
+          updatedSlide.style.textColor !== editSlide.style.textColor ||
+          updatedSlide.talkingHeadVideoUrl !== editSlide.talkingHeadVideoUrl;
 
         if (hasVisualChanges) {
           setEditSlide((prev) => {
@@ -230,6 +231,8 @@ export function SlideReviewer({
               hasBackgroundImage: updatedSlide.hasBackgroundImage,
               backgroundImage: updatedSlide.backgroundImage,
               backgroundVideoUrl: updatedSlide.backgroundVideoUrl,
+              talkingHeadImage: updatedSlide.talkingHeadImage,
+              talkingHeadVideoUrl: updatedSlide.talkingHeadVideoUrl,
               style: {
                 ...prev.style, // Keep existing style props like textSize
                 background: updatedSlide.style.background,
@@ -242,6 +245,8 @@ export function SlideReviewer({
     }
   }, [initialSlides, editing]); // removed editSlide from deps to avoid infinite loop if we were deep comparing
 
+  const preventAutoEditRef = useRef(false);
+
   // Sync current index when navigating from emotional beats sidebar
   useEffect(() => {
     setCurrentIndex(initialIndex);
@@ -253,6 +258,11 @@ export function SlideReviewer({
   useEffect(() => {
     console.log('[EFFECT] autoEdit effect triggered', { autoEdit, currentIndex });
     if (autoEdit) {
+      if (preventAutoEditRef.current) {
+        console.log('[EFFECT] Skipping autoEdit because user manually navigated away');
+        preventAutoEditRef.current = false;
+        return;
+      }
       console.log('[EFFECT] Re-opening editor due to autoEdit=true');
       setEditing(true);
       setEditSlide({ ...slidesRef.current[currentIndex] });
@@ -484,6 +494,7 @@ export function SlideReviewer({
         setCurrentIndex(prevIndex);
         setEditSlide({ ...updated[prevIndex] });
       } else {
+        preventAutoEditRef.current = true;
         setCurrentIndex(currentIndex - 1);
         setEditing(false);
         setEditSlide(null);
@@ -493,6 +504,7 @@ export function SlideReviewer({
 
   const handleSkip = () => {
     if (currentIndex < slides.length - 1) {
+      preventAutoEditRef.current = true;
       setCurrentIndex(currentIndex + 1);
       setEditing(false);
       setEditSlide(null);
@@ -502,6 +514,7 @@ export function SlideReviewer({
   const handleSkipTo = () => {
     const num = parseInt(skipToValue);
     if (num >= 1 && num <= slides.length) {
+      preventAutoEditRef.current = true;
       setCurrentIndex(num - 1);
       setEditing(false);
       setEditSlide(null);
@@ -528,22 +541,30 @@ export function SlideReviewer({
     }
   };
 
-  const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editSlide) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
+
+    const uploadToast = toast.loading('Uploading image...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'vsl123-backgrounds');
+
+      const res = await fetch('/api/upload-image', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+
       setEditSlide({
         ...editSlide,
         hasBackgroundImage: true,
         backgroundImage: {
           ...(editSlide.backgroundImage || { opacity: 40, blur: 8, displayMode: 'blurred' }),
-          url: dataUrl,
+          url: data.url,
         },
         style: {
           ...editSlide.style,
@@ -551,9 +572,11 @@ export function SlideReviewer({
           textColor: 'white',
         },
       });
-      toast.success('Image uploaded!');
-    };
-    reader.readAsDataURL(file);
+      toast.success('Image uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      console.error('Background image upload error:', err);
+      toast.error(err.message || 'Background upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    }
     e.target.value = '';
   };
 
@@ -851,6 +874,25 @@ export function SlideReviewer({
               onTogglePreview={onTogglePreview}
               showPreviewAll={showPreviewAll}
               isSaving={isSaving}
+              onAsyncUpdate={(slideId, updates) => {
+                setSlides((prevSlides) => {
+                  const updated = prevSlides.map((s) => (s.id === slideId ? { ...s, ...updates } : s));
+                  syncProjectSlides(updated);
+                  
+                  const slideToSave = updated.find((s) => s.id === slideId);
+                  if (slideToSave) {
+                    saveSingleSlide(slideToSave);
+                  }
+                  return updated;
+                });
+                
+                setEditSlide((prevEdit) => {
+                  if (prevEdit && prevEdit.id === slideId) {
+                    return { ...prevEdit, ...updates };
+                  }
+                  return prevEdit;
+                });
+              }}
             />
           </div>
         </div>

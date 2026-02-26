@@ -66,16 +66,19 @@ export function EditorContent({ projectId }: EditorContentProps) {
   const updateProject = useUpdateProject();
   const updateSlides = useUpdateSlides();
 
+  // Read persisted state from URL params
+  const urlSlide = searchParams.get('slide');
+  const urlEdit = searchParams.get('edit');
 
   const [step, setStep] = useState<EditorStep>(1);
   const [hasSetInitialStep, setHasSetInitialStep] = useState(false);
-  const [forceSlideView, setForceSlideView] = useState(false);
+  const [forceSlideView, setForceSlideView] = useState(!!urlSlide);
   const [editingName, setEditingName] = useState(false);
   const [projectName, setProjectName] = useState('');
-  const [initialSlideIndex, setInitialSlideIndex] = useState(0);
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [initialSlideIndex, setInitialSlideIndex] = useState(urlSlide ? parseInt(urlSlide) : 0);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(urlSlide ? parseInt(urlSlide) : 0);
   const [isEditingSlide, setIsEditingSlide] = useState(false);
-  const [autoEdit, setAutoEdit] = useState(false);
+  const [autoEdit, setAutoEdit] = useState(urlEdit === '1');
   const [autoPipelineLoading, setAutoPipelineLoading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<'analyzing' | 'imaging' | 'motion' | 'finishing'>('analyzing');
   const [quoteIndex, setQuoteIndex] = useState(0);
@@ -95,6 +98,20 @@ export function EditorContent({ projectId }: EditorContentProps) {
   useEffect(() => {
     router.prefetch('/dashboard');
   }, [router]);
+
+  // Persist slide index and editing state to URL (without full navigation)
+  useEffect(() => {
+    if (!project || step !== 2) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('slide', String(currentSlideIndex));
+    if (isEditingSlide) {
+      params.set('edit', '1');
+    } else {
+      params.delete('edit');
+    }
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, '', newUrl);
+  }, [currentSlideIndex, isEditingSlide, step, project]);
 
   const isNewProject = searchParams.get('new') === '1';
 
