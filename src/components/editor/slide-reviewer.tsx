@@ -169,12 +169,18 @@ export function SlideReviewer({
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
+    console.log('[STATE] editing changed to:', editing);
     onEditingChange?.(editing);
   }, [editing, onEditingChange]);
   const [editSlide, setEditSlide] = useState<Slide | null>(null);
+  
+  useEffect(() => {
+    console.log('[STATE] editSlide changed to:', editSlide ? `slide ${editSlide.id}` : 'null');
+  }, [editSlide]);
   const [skipToValue, setSkipToValue] = useState('');
   const [holdProgress, setHoldProgress] = useState(0);
   const [applyToAllActive, setApplyToAllActive] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const holdAnimRef = useRef<number>(0);
   const holdStartRef = useRef<number>(0);
   const headshotInputRef = useRef<HTMLInputElement>(null);
@@ -242,12 +248,16 @@ export function SlideReviewer({
   }, [initialIndex]);
 
   // Auto-open editing if jumped to a slide
+  // NOTE: Don't include 'slides' in deps - it causes re-opening when slides update
+  // Use slidesRef to get current slides without triggering effect
   useEffect(() => {
+    console.log('[EFFECT] autoEdit effect triggered', { autoEdit, currentIndex });
     if (autoEdit) {
+      console.log('[EFFECT] Re-opening editor due to autoEdit=true');
       setEditing(true);
-      setEditSlide({ ...slides[currentIndex] });
+      setEditSlide({ ...slidesRef.current[currentIndex] });
     }
-  }, [autoEdit, currentIndex, slides]);
+  }, [autoEdit, currentIndex]);
 
   const currentSlide = slides[currentIndex];
   const reviewedCount = slides.filter((s) => s.reviewed).length;
@@ -367,64 +377,74 @@ export function SlideReviewer({
   const handleEditSave = async (applyToAll?: boolean) => {
     if (!editSlide) return;
 
-    if (applyToAll || applyToAllActive) {
-      // Apply style to all remaining + mark everything reviewed → skip to audio
-      const finalSlides = slides.map((s, i) => {
-        if (i === currentIndex) return { ...editSlide, reviewed: true };
-        if (i < currentIndex || s.reviewed) return s;
-        return {
-          ...s,
-          style: { ...editSlide.style },
-          hasBackgroundImage: editSlide.hasBackgroundImage,
-          backgroundImage: editSlide.backgroundImage ? { ...editSlide.backgroundImage } : undefined,
-          headshot: editSlide.headshot ? { ...editSlide.headshot } : undefined,
-          isInfographic: editSlide.isInfographic,
-          infographicVisual: editSlide.infographicVisual ? { ...editSlide.infographicVisual } : undefined,
-          infographicCaptions: s.infographicCaptions || [s.fullScriptText],
-          reviewed: true,
-        };
-      });
-      setSlides(finalSlides);
-      syncProjectSlides(finalSlides);
-      saveBulkSlides(finalSlides);
-      setEditing(false);
-      setEditSlide(null);
-      setApplyToAllActive(false);
-      return;
-    }
-
-    const slideToSave = { ...editSlide, reviewed: true };
-    
-    // Filter out any slides that were absorbed into this one
-    const absorbedIds = new Set(editSlide.absorbedSlideIds || []);
-    let updated = slides.map((s, i) => (i === currentIndex ? slideToSave : s));
-    
-    let savePromise: Promise<unknown> | undefined;
-
-    if (absorbedIds.size > 0) {
-      updated = updated.filter((s) => s.id === editSlide.id || !absorbedIds.has(s.id));
-      savePromise = saveBulkSlides(updated);
-    } else {
-      savePromise = saveSingleSlide(slideToSave);
-    }
-
-
-    setSlides(updated);
-    syncProjectSlides(updated);
-
-    // Move to next slide and keep editing, or close if done
-    if (currentIndex < updated.length - 1) {
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      setEditing(true);
-      setEditSlide({ ...updated[nextIndex] });
-    } else {
-      if (savePromise) {
-        await savePromise;
+    setIsSaving(true);
+    try {
+      if (applyToAll || applyToAllActive) {
+        // Apply style to all remaining + mark everything reviewed → skip to audio
+        const finalSlides = slides.map((s, i) => {
+          if (i === currentIndex) return { ...editSlide, reviewed: true };
+          if (i < currentIndex || s.reviewed) return s;
+          return {
+            ...s,
+            style: { ...editSlide.style },
+            hasBackgroundImage: editSlide.hasBackgroundImage,
+            backgroundImage: editSlide.backgroundImage ? { ...editSlide.backgroundImage } : undefined,
+            headshot: editSlide.headshot ? { ...editSlide.headshot } : undefined,
+            isInfographic: editSlide.isInfographic,
+            infographicVisual: editSlide.infographicVisual ? { ...editSlide.infographicVisual } : undefined,
+            infographicCaptions: s.infographicCaptions || [s.fullScriptText],
+            reviewed: true,
+          };
+        });
+        setSlides(finalSlides);
+        syncProjectSlides(finalSlides);
+        await saveBulkSlides(finalSlides);
+        setEditing(false);
+        setEditSlide(null);
+        setApplyToAllActive(false);
+        return;
       }
-      setViewingSlidesAnyway(false);
-      setEditing(false);
-      setEditSlide(null);
+
+      const slideToSave = { ...editSlide, reviewed: true };
+      
+      // Check if this is the last slide BEFORE filtering
+      const isLastSlide = currentIndex >= slides.length - 1;
+      console.log('[SAVE & NEXT] Checking last slide:', {
+        currentIndex,
+        slidesLength: slides.length,
+        isLastSlide,
+        counter: `${currentIndex + 1}/${slides.length}`
+      });
+      
+      // Filter out any slides that were absorbed into this one
+      const absorbedIds = new Set(editSlide.absorbedSlideIds || []);
+      let updated = slides.map((s, i) => (i === currentIndex ? slideToSave : s));
+      
+      if (absorbedIds.size > 0) {
+        updated = updated.filter((s) => s.id === editSlide.id || !absorbedIds.has(s.id));
+        await saveBulkSlides(updated);
+      } else {
+        await saveSingleSlide(slideToSave);
+      }
+
+      setSlides(updated);
+      syncProjectSlides(updated);
+
+      // Move to next slide and keep editing, or close if done
+      if (!isLastSlide && currentIndex < updated.length - 1) {
+        console.log('[SAVE & NEXT] Moving to next slide');
+        const nextIndex = currentIndex + 1;
+        setCurrentIndex(nextIndex);
+        setEditing(true);
+        setEditSlide({ ...updated[nextIndex] });
+      } else {
+        // Last slide - close editor (same as clicking Cancel)
+        console.log('[SAVE & NEXT] Last slide detected - closing editor');
+        setEditing(false);
+        setEditSlide(null);
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -830,6 +850,7 @@ export function SlideReviewer({
               showEmotionalBeats={showEmotionalBeats}
               onTogglePreview={onTogglePreview}
               showPreviewAll={showPreviewAll}
+              isSaving={isSaving}
             />
           </div>
         </div>

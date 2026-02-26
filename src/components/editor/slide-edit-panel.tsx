@@ -59,6 +59,7 @@ interface SlideEditPanelProps {
   showEmotionalBeats?: boolean;
   onTogglePreview?: () => void;
   showPreviewAll?: boolean;
+  isSaving?: boolean;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -262,6 +263,7 @@ export function SlideEditPanel({
   showEmotionalBeats = false,
   onTogglePreview,
   showPreviewAll = false,
+  isSaving = false,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -274,6 +276,7 @@ export function SlideEditPanel({
   const [aiPrompt, setAiPrompt] = useState('');
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiStylingWords, setAiStylingWords] = useState(false);
+  const [saving, setSaving] = useState(false);
   const localHeadshotRef = useRef<HTMLInputElement>(null);
 
   // Sync text value when slide changes
@@ -725,8 +728,13 @@ export function SlideEditPanel({
     }
   };
 
-  const handleSaveAndNext = () => {
-    onSave(applyToAll);
+  const handleSaveAndNext = async () => {
+    setSaving(true);
+    try {
+      await onSave(applyToAll);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const words = slide.fullScriptText.split(/\s+/);
@@ -793,9 +801,19 @@ export function SlideEditPanel({
             <Button
               type="button"
               onClick={handleSaveAndNext}
-              className="bg-black text-white hover:bg-gray-800 gap-1"
+              disabled={saving || isSaving}
+              className="bg-black text-white hover:bg-gray-800 gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              &#x2713; Save &amp; Next &rarr;
+              {(saving || isSaving) ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  &#x2713; Save &amp; Next &rarr;
+                </>
+              )}
             </Button>
             </div>
           </div>
