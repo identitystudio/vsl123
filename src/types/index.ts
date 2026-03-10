@@ -84,7 +84,7 @@ export interface Slide {
   talkingHeadAudioUrl?: string;    // Audio URL for lip-sync dubbing
   talkingHeadTaskId?: string;      // PiAPI task ID for polling (cleared after completion)
   talkingHeadAsHeadshot?: boolean; // Toggles displaying the generated video as a floating headshot
-  talkingHeadPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'inline'; // Position for floating headshot
+  talkingHeadPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'inline' | 'headshot-bio'; // Position for floating headshot
   talkingHeadSize?: number;        // Size of the floating headshot in pixels (default 160)
 
   // Metadata

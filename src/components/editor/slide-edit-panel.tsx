@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
+import { SlidePreview } from './slide-preview';
 import { AiImageDialog } from './ai-image-dialog';
 import {
   Select,
@@ -282,6 +283,7 @@ export function SlideEditPanel({
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiStylingWords, setAiStylingWords] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'text' | 'media' | 'avatar'>('text');
   const localHeadshotRef = useRef<HTMLInputElement>(null);
 
   // Talking Head Avatar state
@@ -621,7 +623,7 @@ export function SlideEditPanel({
 
   const handlePresetChange = (preset: PresetType) => {
     let newStyle: Partial<SlideStyle> = {};
-    let newSlide = { ...slide };
+    const newSlide = { ...slide };
 
     switch (preset) {
       case 'black-background':
@@ -1122,38 +1124,78 @@ export function SlideEditPanel({
                 Cancel
               </Button>
               <Button
-              type="button"
-              variant="outline"
-              onClick={onPrevious}
-              disabled={!canGoPrevious}
-              className="gap-1"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSaveAndNext}
-              disabled={saving || isSaving}
-              className="bg-black text-white hover:bg-gray-800 gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {(saving || isSaving) ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  &#x2713; Save &amp; Next &rarr;
-                </>
-              )}
-            </Button>
+                type="button"
+                variant="outline"
+                onClick={onPrevious}
+                disabled={!canGoPrevious}
+                className="gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveAndNext}
+                disabled={saving || isSaving}
+                className="bg-black text-white hover:bg-gray-800 gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {(saving || isSaving) ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" /> Save &amp; Next &rarr;
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         </div>
 
-        {/* Editor Controls */}
+        {/* Editor Controls with Tabs */}
         <div className="flex-1 space-y-6">
+          
+          {/* Custom Tabs Navigation */}
+          <div className="flex flex-col sm:flex-row p-1 bg-gray-100/80 backdrop-blur-sm rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10 w-full mb-2 gap-1">
+            <button
+              onClick={() => setActiveTab('text')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+                activeTab === 'text' 
+                  ? 'bg-white text-black shadow-sm border border-gray-200/50' 
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Style & Text
+            </button>
+            <button
+              onClick={() => setActiveTab('media')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+                activeTab === 'media' 
+                  ? 'bg-white text-black shadow-sm border border-gray-200/50' 
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+              }`}
+            >
+              <Search className="w-3.5 h-3.5" />
+              Media
+            </button>
+            <button
+              onClick={() => setActiveTab('avatar')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+                activeTab === 'avatar' 
+                  ? 'bg-black text-white shadow-md ring-1 ring-black' 
+                  : 'text-gray-500 hover:text-black hover:bg-gray-100'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Talking Head
+            </button>
+          </div>
+
+          {/* TAB CONTENT: STYLE & TEXT */}
+          <div className={activeTab === 'text' ? 'block space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
           
           {/* Text Content */}
           <div>
@@ -1419,6 +1461,10 @@ export function SlideEditPanel({
                </div>
             </div>
           )}
+          </div> {/* END TEXT TAB */}
+
+          {/* TAB CONTENT: MEDIA */}
+          <div className={activeTab === 'media' ? 'block space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
 
           {/* Background Image Controls */}
           {slide.hasBackgroundImage && (
@@ -1761,9 +1807,10 @@ export function SlideEditPanel({
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="Position" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inline">Inline Text (Default)</SelectItem>
-                      <SelectItem value="top-left">Top Left</SelectItem>
+                        <SelectContent>
+                          <SelectItem value="inline">Inline Text (Default)</SelectItem>
+                          <SelectItem value="headshot-bio">Headshot + Bio</SelectItem>
+                          <SelectItem value="top-left">Top Left</SelectItem>
                       <SelectItem value="top-right">Top Right</SelectItem>
                       <SelectItem value="bottom-left">Bottom Left</SelectItem>
                       <SelectItem value="bottom-right">Bottom Right</SelectItem>
@@ -1817,279 +1864,289 @@ export function SlideEditPanel({
               </div>
             </div>
           )}
+          </div> {/* END MEDIA TAB */}
 
-          {/* 🗣️ Talking Head Avatar Section */}
-          <div className="space-y-3 pt-4 border-t-2 border-dashed border-indigo-200">
+          {/* TAB CONTENT: TALKING HEAD AVATAR */}
+          <div className={activeTab === 'avatar' ? 'block space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
+
+          {/* 🗣️ Talking Head Avatar Section (Redesigned) */}
+          <div className="space-y-6 pt-4 border-t-2 border-black">
+            
+            {/* Header / Intro */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🗣️</span>
-                <span className="font-semibold text-sm">Talking Head Avatar</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 rounded-full font-bold uppercase tracking-wider">Beta</span>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-black text-white rounded-lg flex items-center justify-center font-bold text-lg">
+                  TH
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight">Talking Head Avatar</h3>
+                  <p className="text-[10px] text-gray-500 font-medium">Create a synchronized video spokesperson</p>
+                </div>
               </div>
-              {slide.talkingHeadImage && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:text-red-600 gap-1 h-7 text-xs"
-                  onClick={handleRemoveAvatar}
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Remove
-                </Button>
-              )}
+              
+              {/* API Key Inline (Subtle) */}
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">PiAPI Key</span>
+                <Input
+                  type="password"
+                  value={avatarApiKeyLocal}
+                  onChange={(e) => {
+                    setAvatarApiKey(e.target.value);
+                    localStorage.setItem('vsl123-piapi-key', e.target.value);
+                  }}
+                  placeholder="Paste Key"
+                  className="h-7 w-24 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded bg-gray-50 text-center"
+                />
+              </div>
             </div>
 
-            <div className="flex items-start gap-4">
-              {slide.talkingHeadImage ? (
-                <div className="relative group flex-shrink-0">
-                  {/* Distinct purple-indigo gradient border */}
-                  <div className="w-20 h-20 rounded-xl p-[3px] bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 shadow-lg shadow-purple-200/50">
-                    <img
-                      src={slide.talkingHeadImage}
-                      alt="Avatar face"
-                      className="w-full h-full rounded-[9px] object-cover bg-white"
-                    />
+            {/* Main Avatar Creation Area */}
+            <div className="grid grid-cols-[100px_1fr] gap-6">
+              
+              {/* Left: Avatar Face Upload */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block text-center">Face</span>
+                
+                {slide.talkingHeadImage ? (
+                  <div className="relative group w-full aspect-square">
+                    <div className="w-full h-full rounded-xl border-2 border-black overflow-hidden shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white transition-transform group-hover:-translate-y-0.5 group-hover:-translate-x-0.5 group-hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+                      <img
+                        src={slide.talkingHeadImage}
+                        alt="Avatar"
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Overlay Action */}
+                      <button
+                        onClick={() => avatarImageInputRef.current?.click()}
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-1"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        <span className="text-[9px] font-bold uppercase">Change</span>
+                      </button>
+                    </div>
+                    
+                    <button
+                      onClick={handleRemoveAvatar}
+                      className="absolute -top-2 -right-2 bg-white border-2 border-black rounded-full p-1 shadow-sm hover:bg-gray-100 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3 text-black" />
+                    </button>
                   </div>
-                  {/* Badge */}
-                  <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-0.5">
-                    <User className="w-2 h-2" />
-                    Avatar
-                  </div>
-                  {/* Hover to change */}
+                ) : (
                   <button
                     onClick={() => avatarImageInputRef.current?.click()}
-                    className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="w-full aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-black hover:bg-gray-50 flex flex-col items-center justify-center gap-2 transition-all group"
                   >
-                    <span className="text-white text-[10px] font-medium">Change</span>
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-colors">
+                      <Upload className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-bold text-gray-400 group-hover:text-black uppercase">Upload</span>
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => avatarImageInputRef.current?.click()}
-                  className="w-20 h-20 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/50 flex flex-col items-center justify-center gap-1 hover:border-purple-400 hover:bg-purple-50 transition-all cursor-pointer flex-shrink-0"
-                >
-                  <Upload className="w-4 h-4 text-purple-400" />
-                  <span className="text-[9px] text-purple-500 font-medium leading-tight text-center">Upload<br/>Face</span>
-                </button>
-              )}
+                )}
+              </div>
 
-              <div className="flex-1 min-w-0 space-y-2">
-                {/* Audio URL */}
-                <div>
-                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
-                    Audio URL {slide.audioUrl && '(auto-filled)'}
-                  </label>
-                  <Input
-                    value={avatarAudioUrl}
-                    onChange={(e) => setAvatarAudioUrl(e.target.value)}
-                    onBlur={() => {
-                      if (avatarAudioUrl !== (slide.talkingHeadAudioUrl || slide.audioUrl || '')) {
-                        onUpdate({ ...slide, talkingHeadAudioUrl: avatarAudioUrl });
-                      }
-                    }}
-                    placeholder="https://... audio file URL"
-                    className="h-7 text-xs"
-                  />
+              {/* Right: Configuration */}
+              <div className="space-y-4">
+                
+                {/* Inputs Group */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-black uppercase tracking-wider mb-1.5 flex justify-between">
+                      <span>Script / Prompt</span>
+                      <span className="text-gray-400 font-normal normal-case">Describe how they speak</span>
+                    </label>
+                    <Input
+                      value={avatarPrompt}
+                      onChange={(e) => setAvatarPrompt(e.target.value)}
+                      onBlur={() => {
+                        if (avatarPrompt !== (slide.talkingHeadPrompt || '')) {
+                          onUpdate({ ...slide, talkingHeadPrompt: avatarPrompt });
+                        }
+                      }}
+                      placeholder="e.g. Speaks with confidence and energy..."
+                      className="h-9 text-xs border-gray-300 focus:border-black focus:ring-1 focus:ring-black rounded-lg"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] font-bold text-black uppercase tracking-wider mb-1.5 flex justify-between">
+                      <span>Audio Source</span>
+                      {slide.audioUrl && <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-bold">AUTO-LINKED</span>}
+                    </label>
+                    <div className="relative">
+                      <Input
+                        value={avatarAudioUrl}
+                        onChange={(e) => setAvatarAudioUrl(e.target.value)}
+                        onBlur={() => {
+                          if (avatarAudioUrl !== (slide.talkingHeadAudioUrl || slide.audioUrl || '')) {
+                            onUpdate({ ...slide, talkingHeadAudioUrl: avatarAudioUrl });
+                          }
+                        }}
+                        placeholder="https://... (Audio URL)"
+                        className="h-9 text-xs border-gray-300 focus:border-black focus:ring-1 focus:ring-black rounded-lg pr-8 font-mono"
+                      />
+                      {avatarAudioUrl && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Audio linked" />
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Prompt */}
-                <div>
-                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
-                    Prompt
-                  </label>
-                  <Input
-                    value={avatarPrompt}
-                    onChange={(e) => setAvatarPrompt(e.target.value)}
-                    onBlur={() => {
-                      if (avatarPrompt !== (slide.talkingHeadPrompt || '')) {
-                        onUpdate({ ...slide, talkingHeadPrompt: avatarPrompt });
-                      }
-                    }}
-                    placeholder="e.g. Person speaks with confidence"
-                    className="h-7 text-xs"
-                  />
+                {/* Generate Action */}
+                <div className="pt-1">
+                  <Button
+                    onClick={handleGenerateAvatar}
+                    disabled={!slide.talkingHeadImage || avatarGenerating || !avatarApiKeyLocal.trim()}
+                    className="w-full h-11 bg-black text-white hover:bg-gray-800 border-2 border-black shadow-[4px_4px_0px_0px_rgba(200,200,200,1)] hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(200,200,200,1)] hover:bg-black transition-all rounded-lg font-bold uppercase tracking-wider disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
+                  >
+                    {avatarGenerating ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Creating Magic... {avatarElapsed > 0 && `(${avatarElapsed}s)`}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" />
+                        <span>Generate Video</span>
+                      </div>
+                    )}
+                  </Button>
+                  {!slide.talkingHeadImage && (
+                    <p className="text-[10px] text-center text-gray-400 mt-2 font-medium">
+                      Upload a face image first to enable generation
+                    </p>
+                  )}
                 </div>
 
-                {/* API Key */}
-                <div>
-                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-bold block mb-1">
-                    🔑 PiAPI Key
-                  </label>
-                  <Input
-                    type="password"
-                    value={avatarApiKeyLocal}
-                    onChange={(e) => {
-                      setAvatarApiKey(e.target.value);
-                      localStorage.setItem('vsl123-piapi-key', e.target.value);
-                    }}
-                    placeholder="Paste your PiAPI key here"
-                    className="h-7 text-xs font-mono"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Save Avatar Settings Button */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
-              onClick={() => {
-                const updates = {
-                  talkingHeadAudioUrl: avatarAudioUrl,
-                  talkingHeadPrompt: avatarPrompt,
-                };
-                onUpdate({ ...slide, ...updates });
-                onAsyncUpdate?.(slide.id, updates);
-                toast.success('Avatar settings saved!');
-              }}
-            >
-              <Save className="w-3.5 h-3.5" />
-              Save Avatar Settings
-            </Button>
 
-            {/* Generate Button */}
-            <Button
-              size="sm"
-              className="w-full gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-sm"
-              onClick={handleGenerateAvatar}
-              disabled={!slide.talkingHeadImage || avatarGenerating || !avatarApiKeyLocal.trim()}
-            >
-              {avatarGenerating ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Generating... {avatarElapsed > 0 && `(${Math.floor(avatarElapsed / 60)}:${String(avatarElapsed % 60).padStart(2, '0')})`}
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Generate Talking Head
-                </>
-              )}
-            </Button>
-
-            {!slide.talkingHeadImage && (
-              <p className="text-[10px] text-gray-400 text-center">
-                Upload a face photo to create a talking head video with lip-sync.
-              </p>
-            )}
-
-            {/* 🎥 Custom Video Upload Separator */}
-            <div className="relative flex items-center py-2">
-              <div className="flex-grow border-t border-gray-200"></div>
-              <span className="flex-shrink-0 mx-4 text-[10px] text-gray-400 font-bold tracking-widest uppercase">OR</span>
-              <div className="flex-grow border-t border-gray-200"></div>
+            {/* Separator */}
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-gray-400 font-bold tracking-widest">OR</span>
+              </div>
             </div>
 
-            {/* Custom Video Upload & Preview */}
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2 border-dashed border-2 border-blue-300 text-blue-600 hover:bg-blue-50"
-                onClick={() => avatarVideoInputRef.current?.click()}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                {slide.talkingHeadVideoUrl ? 'Replace Custom Video' : 'Upload Custom Video'}
-              </Button>
 
-              {/* Video Preview */}
-              {slide.talkingHeadVideoUrl && (
-                <div className="rounded-xl overflow-hidden border-2 border-indigo-300 bg-gray-900 shadow-lg shadow-indigo-100/50">
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600">
-                    <div className="flex items-center gap-1.5">
-                      <Video className="w-3.5 h-3.5 text-white" />
-                      <span className="text-[11px] text-white font-bold uppercase tracking-wider">
-                        {slide.talkingHeadTaskId ? 'Generated Avatar Video' : 'Custom Uploaded Video'}
-                      </span>
-                    </div>
-                    <span className="text-[9px] text-white/70">Click to play</span>
+            {/* Custom Video / Result Area */}
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
+                  <Video className="w-3.5 h-3.5" />
+                  Video Output
+                </h4>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => avatarVideoInputRef.current?.click()}
+                  className="h-7 text-[10px] font-bold border-gray-300 hover:border-black hover:bg-white uppercase tracking-wider"
+                >
+                  Upload Custom Video
+                </Button>
+              </div>
+
+              {slide.talkingHeadVideoUrl ? (
+                <div className="space-y-4">
+                  {/* Video Player */}
+                  <div className="relative rounded-lg overflow-hidden border-2 border-black shadow-md bg-black">
+                    <video
+                      src={slide.talkingHeadVideoUrl}
+                      controls
+                      className="w-full max-h-[240px]" 
+                    />
+                    {slide.talkingHeadTaskId && (
+                      <div className="absolute top-2 right-2 bg-black text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm border border-white/20 uppercase tracking-wider">
+                        AI Generated
+                      </div>
+                    )}
                   </div>
-                  <video
-                    src={slide.talkingHeadVideoUrl}
-                    controls
-                    poster={slide.talkingHeadImage}
-                    preload="metadata"
-                    className="w-full"
-                    style={{ maxHeight: '220px' }}
-                  />
-                </div>
-              )}
 
-              {/* Headshot Mode Toggle for Talking Head Video */}
-              {slide.talkingHeadVideoUrl && (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 mt-2 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 cursor-pointer">
+                  {/* Display Options */}
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <label className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-black transition-colors">
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${slide.talkingHeadAsHeadshot ? 'border-black bg-black' : 'border-gray-300'}`}>
+                        {slide.talkingHeadAsHeadshot && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
                       <input
                         type="checkbox"
-                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                        className="hidden"
                         checked={!!slide.talkingHeadAsHeadshot}
                         onChange={(e) => onUpdate({ ...slide, talkingHeadAsHeadshot: e.target.checked })}
                       />
-                      Display as Floating Headshot
+                      <span className="text-xs font-bold text-gray-700">Floating Headshot</span>
                     </label>
+
+                    {slide.talkingHeadAsHeadshot && (
+                      <div className="space-y-2">
+                         <Select
+                          value={slide.talkingHeadPosition || 'bottom-right'}
+                          onValueChange={(val: any) =>
+                            onUpdate({
+                              ...slide,
+                              talkingHeadPosition: val,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-9 text-xs font-bold border-gray-200">
+                            <SelectValue placeholder="Position" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="inline">Inline Text (Default)</SelectItem>
+                            <SelectItem value="headshot-bio">Headshot + Bio</SelectItem>
+                            <SelectItem value="top-left">Top Left</SelectItem>
+                            <SelectItem value="top-right">Top Right</SelectItem>
+                            <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                            <SelectItem value="bottom-right">Bottom Right</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
 
+                  {/* Size Slider (if floating) */}
                   {slide.talkingHeadAsHeadshot && (
-                    <div className="pt-1">
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">
-                        Headshot Position
-                      </label>
-                      <Select
-                        value={slide.talkingHeadPosition || 'inline'}
-                        onValueChange={(val: any) =>
-                          onUpdate({
-                            ...slide,
-                            talkingHeadPosition: val === 'inline' ? undefined : val,
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-sm bg-white">
-                          <SelectValue placeholder="Position" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="inline">Inline Text (Default)</SelectItem>
-                          <SelectItem value="top-left">Top Left</SelectItem>
-                          <SelectItem value="top-right">Top Right</SelectItem>
-                          <SelectItem value="bottom-left">Bottom Left</SelectItem>
-                          <SelectItem value="bottom-right">Bottom Right</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Headshot Size Slider */}
-                  {slide.talkingHeadAsHeadshot && (
-                    <div className="pt-2">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                          Headshot Size
-                        </label>
-                        <span className="text-[10px] text-gray-400 font-mono">
-                          {slide.talkingHeadSize || 160}px
-                        </span>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        <span>Size</span>
+                        <span>{slide.talkingHeadSize || 160}px</span>
                       </div>
-                      <input
-                        type="range"
-                        min="80"
-                        max="400"
-                        step="10"
-                        value={slide.talkingHeadSize || 160}
-                        onChange={(e) =>
+                      <Slider
+                        value={[slide.talkingHeadSize || 160]}
+                        min={100}
+                        max={400}
+                        step={10}
+                        onValueChange={([v]) =>
                           onUpdate({
                             ...slide,
-                            talkingHeadSize: parseInt(e.target.value, 10),
+                            talkingHeadSize: v,
                           })
                         }
-                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        className="py-1"
                       />
                     </div>
                   )}
+
+                </div>
+              ) : (
+                <div 
+                  onClick={() => avatarVideoInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 rounded-lg h-32 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-black hover:bg-white transition-all group"
+                >
+                  <Video className="w-6 h-6 text-gray-300 group-hover:text-black transition-colors" />
+                  <p className="text-xs font-medium text-gray-400 group-hover:text-black">No video yet</p>
                 </div>
               )}
             </div>
+
           </div>
+          </div> {/* END TALKING HEAD TAB */}
 
           {/* Apply to all Toggle */}
           <div className="flex items-center gap-2 pt-4 border-t border-gray-100">

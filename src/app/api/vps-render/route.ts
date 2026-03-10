@@ -46,15 +46,19 @@ export async function GET(req: Request) {
       const fileUrl = `http://${VPS_IP}:3001/outputs/${download}`;
       console.log(`[Proxy] Streaming file from VPS: ${fileUrl}`);
       
-      const fileRes = await fetch(fileUrl);
+      const fileRes = await fetch(fileUrl, { cache: 'no-store' });
       if (!fileRes.ok) return NextResponse.json({ error: 'File not found on VPS' }, { status: 404 });
+
+      const contentLength = fileRes.headers.get('Content-Length');
+      console.log(`[Proxy] File size: ${contentLength} bytes`);
 
       // Create a response with the same body but fresh headers
       return new Response(fileRes.body, {
         headers: {
           'Content-Type': fileRes.headers.get('Content-Type') || 'application/octet-stream',
-          'Content-Length': fileRes.headers.get('Content-Length') || '',
+          'Content-Length': contentLength || '',
           'Content-Disposition': `attachment; filename="${download}"`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
         },
       });
     }

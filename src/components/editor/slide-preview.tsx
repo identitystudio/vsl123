@@ -142,7 +142,7 @@ function WordSpan({
 }
 
 function getHeadshotStyle(position: string | undefined, scale: number): React.CSSProperties {
-  if (!position || position === 'inline') {
+  if (!position || position === 'inline' || position === 'headshot-bio') {
     return { position: 'relative' };
   }
   
@@ -163,7 +163,7 @@ function getHeadshotStyle(position: string | undefined, scale: number): React.CS
   }
 }
 
-export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDrag, onImageDoubleClick, onWordClick }: SlidePreviewProps) {
+export function SlidePreview({ slide, scale = 1.5, onHeadshotClick, onSplitImageDrag, onImageDoubleClick, onWordClick }: SlidePreviewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
   const dragStartPos = useRef(50);
@@ -439,7 +439,7 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
                 style={{ 
                   ...getHeadshotStyle(slide.talkingHeadPosition, scale),
                   zIndex: 25,
-                  marginBottom: !slide.talkingHeadPosition || slide.talkingHeadPosition === 'inline' ? `${8 * scale}px` : 0 
+                  marginBottom: !slide.talkingHeadPosition || slide.talkingHeadPosition === 'inline' || slide.talkingHeadPosition === 'headshot-bio' ? `${8 * scale}px` : 0 
                 }}
               >
                 <video
@@ -497,29 +497,7 @@ export function SlidePreview({ slide, scale = 1, onHeadshotClick, onSplitImageDr
         )}
       </div>
 
-      {/* Talking Head Avatar indicator */}
-      {slide.talkingHeadVideoUrl && (
-        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg"
-          style={{ fontSize: `${10 * scale}px` }}
-        >
-          <span style={{ fontSize: `${12 * scale}px` }}>🗣️</span>
-          <span className="text-white font-bold uppercase tracking-wider" style={{ fontSize: `${8 * scale}px` }}>
-            Avatar Video
-          </span>
-        </div>
-      )}
 
-      {/* Talking Head Avatar image indicator (uploaded but not yet generated) */}
-      {slide.talkingHeadImage && !slide.talkingHeadVideoUrl && (
-        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-purple-500/70 shadow-lg"
-          style={{ fontSize: `${10 * scale}px` }}
-        >
-          <span style={{ fontSize: `${12 * scale}px` }}>🗣️</span>
-          <span className="text-white font-bold uppercase tracking-wider opacity-80" style={{ fontSize: `${8 * scale}px` }}>
-            Pending
-          </span>
-        </div>
-      )}
     </div>
   );
 }

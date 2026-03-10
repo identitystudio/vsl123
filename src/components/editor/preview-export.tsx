@@ -1442,16 +1442,68 @@ export function PreviewExport({
                       document.body.appendChild(wrapper);
                       const root = ReactDOM.createRoot(container);
                       await new Promise<void>((resolve) => {
-                      const renderSlide = { ...slide, backgroundVideoUrl: undefined };
-                      root.render(React.createElement(SlidePreview, { slide: renderSlide, scale: 3 }));
-                        setTimeout(resolve, 100); 
+                        const renderSlide = { ...slide, backgroundVideoUrl: undefined };
+                        root.render(React.createElement(SlidePreview, { slide: renderSlide, scale: 3 }));
+                        setTimeout(resolve, 500); // Allow layout to settle for accurate position measurement
                       });
                       const renderedElement = container.firstElementChild as HTMLElement;
                       if (!renderedElement) throw new Error('Failed to render slide locally');
+
+                      // Measure exact TH position from DOM
+                      let thX = 0;
+                      let thY = 0;
+                      let thSize = 0;
+
+                      if (slide.talkingHeadAsHeadshot && slide.talkingHeadVideoUrl) {
+                        // The TH video element won't load in off-screen render, so calculate
+                        // position to match getHeadshotStyle() in SlidePreview exactly
+                        const renderScale = 3;
+                        const size = (slide.talkingHeadSize || 160) * renderScale;
+                        const margin = 24 * renderScale;
+                        thSize = size;
+
+                        const pos = slide.talkingHeadPosition;
+                        if (pos === 'top-left' || pos === 'headshot-bio') {
+                          thX = margin;
+                          thY = margin;
+                        } else if (pos === 'top-right') {
+                          thX = 1920 - size - margin;
+                          thY = margin;
+                        } else if (pos === 'bottom-left') {
+                          thX = margin;
+                          thY = 1080 - size - margin;
+                        } else {
+                          // bottom-right or default
+                          thX = 1920 - size - margin;
+                          thY = 1080 - size - margin;
+                        }
+
+                        // Try DOM measurement as override (if element actually rendered)
+                        const headshotEl = container.querySelector('video.rounded-full') || container.querySelector('.rounded-full.object-cover');
+                        if (headshotEl) {
+                          const rect = headshotEl.getBoundingClientRect();
+                          const containerRect = container.getBoundingClientRect();
+                          const measuredX = rect.left - containerRect.left;
+                          const measuredY = rect.top - containerRect.top;
+                          if (measuredX > 0 || measuredY > 0) {
+                            thX = measuredX;
+                            thY = measuredY;
+                            thSize = rect.width;
+                          }
+                        }
+                        console.log(`TH position for slide ${i}: x=${thX}, y=${thY}, size=${thSize}, position=${pos}`);
+                      }
+
                         slidesWithHtml.push({
                           audioUrl: slide.audioUrl,
-                          backgroundVideoUrl: cloudinaryVideoUrl, // Use Cloudinary URL instead
-                          backgroundImage: slide.backgroundImage,       // Image support
+                          backgroundVideoUrl: cloudinaryVideoUrl,
+                          backgroundImage: slide.backgroundImage,
+                          talkingHeadVideoUrl: slide.talkingHeadVideoUrl,
+                          talkingHeadAsHeadshot: slide.talkingHeadAsHeadshot,
+                          talkingHeadPosition: slide.talkingHeadPosition,
+                          talkingHeadSize: slide.talkingHeadSize,
+                          talkingHeadX: thX,
+                          talkingHeadY: thY,
                           htmlContent: renderedElement.outerHTML
                         });
                       root.unmount();
@@ -1459,10 +1511,10 @@ export function PreviewExport({
                     }
 
                     toast.info('Sending project to VPS...');
-                    
+
                     const payload = { slides: slidesWithHtml, projectName };
-                    console.log('🚀 VPS Payload with Cloudinary URLs:', JSON.stringify(payload, (key, value) => {
-                      if (key === 'htmlContent') return value.substring(0, 50) + '...'; // Truncate HTML for readability
+                    console.log('VPS Payload with Cloudinary URLs:', JSON.stringify(payload, (key, value) => {
+                      if (key === 'htmlContent') return value.substring(0, 50) + '...';
                       return value;
                     }, 2));
 
@@ -1576,15 +1628,62 @@ export function PreviewExport({
                       await new Promise<void>((resolve) => {
                         const renderSlide = { ...slide, backgroundVideoUrl: undefined };
                         root.render(React.createElement(SlidePreview, { slide: renderSlide, scale: 3 }));
-                        setTimeout(resolve, 100); 
+                        setTimeout(resolve, 500);
                       });
                       const renderedElement = container.firstElementChild as HTMLElement;
                       if (!renderedElement) throw new Error('Failed to render slide locally');
+
+                      // Measure exact TH position from DOM
+                      let thX = 0;
+                      let thY = 0;
+                      let thSize = 0;
+
+                      if (slide.talkingHeadAsHeadshot && slide.talkingHeadVideoUrl) {
+                        const renderScale = 3;
+                        const size = (slide.talkingHeadSize || 160) * renderScale;
+                        const margin = 24 * renderScale;
+                        thSize = size;
+
+                        const pos = slide.talkingHeadPosition;
+                        if (pos === 'top-left' || pos === 'headshot-bio') {
+                          thX = margin;
+                          thY = margin;
+                        } else if (pos === 'top-right') {
+                          thX = 1920 - size - margin;
+                          thY = margin;
+                        } else if (pos === 'bottom-left') {
+                          thX = margin;
+                          thY = 1080 - size - margin;
+                        } else {
+                          thX = 1920 - size - margin;
+                          thY = 1080 - size - margin;
+                        }
+
+                        const headshotEl = container.querySelector('video.rounded-full') || container.querySelector('.rounded-full.object-cover');
+                        if (headshotEl) {
+                          const rect = headshotEl.getBoundingClientRect();
+                          const containerRect = container.getBoundingClientRect();
+                          const measuredX = rect.left - containerRect.left;
+                          const measuredY = rect.top - containerRect.top;
+                          if (measuredX > 0 || measuredY > 0) {
+                            thX = measuredX;
+                            thY = measuredY;
+                            thSize = rect.width;
+                          }
+                        }
+                        console.log(`TH position for slide ${i} (ZIP): x=${thX}, y=${thY}, size=${thSize}`);
+                      }
+
                         slidesWithHtml.push({
                           audioUrl: slide.audioUrl,
-                          backgroundVideoUrl: cloudinaryVideoUrl, // Use Cloudinary URL instead
-                          backgroundImage: slide.backgroundImage,       // Image support
-
+                          backgroundVideoUrl: cloudinaryVideoUrl,
+                          backgroundImage: slide.backgroundImage,
+                          talkingHeadVideoUrl: slide.talkingHeadVideoUrl,
+                          talkingHeadAsHeadshot: slide.talkingHeadAsHeadshot,
+                          talkingHeadPosition: slide.talkingHeadPosition,
+                          talkingHeadSize: slide.talkingHeadSize,
+                          talkingHeadX: thX,
+                          talkingHeadY: thY,
                           htmlContent: renderedElement.outerHTML
                         });
                       root.unmount();

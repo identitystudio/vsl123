@@ -653,7 +653,7 @@ export function SlideReviewer({
   }
 
   return (
-    <div className={editing && showInfographics ? 'max-w-6xl mx-auto px-4 py-8' : 'max-w-4xl mx-auto px-4 py-8'}>
+    <div className={editing && showInfographics ? 'max-w-7xl mx-auto px-4 py-8' : 'max-w-6xl mx-auto px-4 py-8'}>
       {/* Slide counter */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-gray-500">
