@@ -90,11 +90,12 @@ export function InfographicsPanel({
     setError(null);
 
     try {
+      const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
       // Use n8n Webhook for generation
       const response = await fetch('https://themacularprogram.app.n8n.cloud/webhook/generate-infographics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), apiKey }),
       });
 
       if (!response.ok) throw new Error('Failed to generate infographics');

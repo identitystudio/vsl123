@@ -3,7 +3,7 @@ import { getThemeConfig, type ImageTheme } from '@/lib/image-themes';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, theme = 'realism' } = await request.json();
+    const { prompt, theme = 'realism', apiKey } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: enhancedPrompt }),
+        body: JSON.stringify({ prompt: enhancedPrompt, apiKey }),
       }
     );
 

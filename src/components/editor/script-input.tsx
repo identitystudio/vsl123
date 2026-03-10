@@ -721,7 +721,6 @@ export function ScriptInput({
               gradient: gradients[gColor as keyof typeof gradients] || gradients.purple,
               gradientName: gColor as any,
             };
-            updatedSlide.isInfographic = true;
             break;
         }
 
@@ -878,41 +877,7 @@ export function ScriptInput({
       
       console.log(`%c📸 IMAGE FETCH COMPLETE: ${successCount}/${slidesNeedingImages.length} images`, 'background: #2196F3; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
 
-      setProgress(88);
 
-      // Step 4: Fetch infographic visuals for infographic slides
-      const infographicSlides = styledSlides.filter((s) => s.isInfographic);
-      for (const slide of infographicSlides) {
-        try {
-          const visualResponse = await fetch('/api/infographic-visual', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: slide.fullScriptText,
-              emotion: slide.emotion,
-              context: slide.sceneTitle,
-            }),
-          });
-
-          if (visualResponse.ok) {
-            const visualData = await visualResponse.json();
-            const slideIndex = styledSlides.findIndex((s) => s.id === slide.id);
-            if (slideIndex !== -1) {
-              styledSlides[slideIndex].infographicVisual = {
-                type: visualData.type || 'emoji',
-                value: visualData.value || '💡',
-              } as InfographicVisual;
-              styledSlides[slideIndex].infographicCaptions = [slide.fullScriptText];
-            }
-          }
-        } catch {
-          // Continue without visual on error
-        }
-      }
-
-      setProgress(95);
-
-      // Small delay for final message
       await new Promise((r) => setTimeout(r, 600));
       setProgress(100);
 

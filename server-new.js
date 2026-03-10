@@ -448,7 +448,7 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
         // video is slightly longer than audio — the "extra" frozen frames are what
         // xfade will consume during the transition overlap.
         console.log(`Padding segment ${i} with ${transDur}s frozen frames for transition...`);
-        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=stop_mode=clone:stop_duration=${transDur}" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${paddedPath}"`);
+        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=stop_mode=clone:stop_duration=${transDur}" -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${paddedPath}"`);
 
         await fs.move(paddedPath, segPath, { overwrite: true });
         paddedDurations[i] = durations[i] + transDur;
@@ -493,7 +493,7 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
     audioFilter += `concat=n=${segFiles.length}:v=0:a=1[aout]`;
 
     const filterComplex = `${videoFilter};${audioFilter}`;
-    const cmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -r 30 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`;
+    const cmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -r 30 -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`;
 
     console.log('Transition concat command:', cmd.substring(0, 500) + '...');
     await runCmd(cmd);

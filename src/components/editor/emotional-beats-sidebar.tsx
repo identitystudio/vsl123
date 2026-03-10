@@ -133,10 +133,11 @@ export function EmotionalBeatsSidebar({
       toast.info(`Generating image for "${beat.name}"...`);
 
       try {
+        const currentApiKey = apiKey || localStorage.getItem('vsl123-webhook-api-key') || '';
         const res = await fetch('/api/generate-beat-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: beat.visualPrompt, theme: selectedTheme }),
+          body: JSON.stringify({ prompt: beat.visualPrompt, theme: selectedTheme, apiKey: currentApiKey }),
         });
 
         if (!res.ok) throw new Error('Image generation failed');

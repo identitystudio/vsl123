@@ -347,12 +347,14 @@ export function EditorContent({ projectId }: EditorContentProps) {
             await sleep(AUTO_BEAT_IMAGE_DELAY_MS);
 
             try {
+              const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
               const imageResponse = await fetch('/api/generate-beat-image', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                   prompt: beat.visualPrompt,
                   theme,
+                  apiKey,
                 }),
               });
 

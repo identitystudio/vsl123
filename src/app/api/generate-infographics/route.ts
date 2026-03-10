@@ -1,6 +1,6 @@
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
+    const { prompt, apiKey } = await req.json();
 
     if (!prompt || prompt.trim().length === 0) {
       return Response.json(
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), apiKey }),
       }
     );
 

@@ -54,10 +54,11 @@ export function InfographicGenerator({
     setError(null);
 
     try {
+      const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
       const response = await fetch('/api/generate-infographics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), apiKey }),
       });
 
       if (!response.ok) {

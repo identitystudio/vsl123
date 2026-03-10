@@ -73,7 +73,6 @@ const PRESETS: { label: string; value: PresetType }[] = [
   { label: 'Headshot + Bio', value: 'headshot-bio' },
   { label: 'Image Backdrop', value: 'image-backdrop' },
   { label: 'Image + Text', value: 'image-text' },
-  { label: 'Infographic Style', value: 'infographic' },
 ];
 
 const TEXT_SIZES = [48, 60, 72, 84, 96, 108, 120];
@@ -773,27 +772,6 @@ export function SlideEditPanel({
           };
         }
         break;
-      case 'infographic':
-        newStyle = {
-          background: 'gradient',
-          textColor: 'white',
-          gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          gradientName: 'purple',
-        };
-        newSlide.hasBackgroundImage = false;
-        newSlide.backgroundImage = undefined;
-        newSlide.headshot = null;
-        newSlide.isInfographic = true;
-        // Start with current slide text as first caption
-        newSlide.infographicCaptions = [slide.fullScriptText];
-        // Update immediately with basic infographic, then fetch AI-generated content
-        onUpdate({
-          ...newSlide,
-          style: { ...slide.style, ...newStyle },
-        });
-        // Fetch AI-generated visual and bundled lines
-        fetchInfographicContent(newSlide, newStyle);
-        return;
     }
 
     onUpdate({
@@ -2053,49 +2031,7 @@ export function SlideEditPanel({
             </div>
           )}
 
-          {/* Infographic Controls */}
-          {slide.isInfographic && (
-            <div>
-              {/* Visual Preview */}
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-center">
-                  <div className="text-4xl">
-                    {slide.infographicVisual ? (
-                      slide.infographicVisual.type === 'emoji' ? (
-                        slide.infographicVisual.value
-                      ) : slide.infographicVisual.type === 'svg' ? (
-                        <div
-                          className="w-16 h-16"
-                          dangerouslySetInnerHTML={{ __html: slide.infographicVisual.value }}
-                        />
-                      ) : (
-                        slide.infographicVisual.value
-                      )
-                    ) : null}
-                  </div>
-                </div>
 
-              {/* Remove infographic mode */}
-              <div className="mt-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:text-red-600 gap-1"
-                  onClick={() =>
-                    onUpdate({
-                      ...slide,
-                      isInfographic: false,
-                      infographicCaptions: undefined,
-                      infographicVisual: undefined,
-                      absorbedSlideIds: undefined,
-                    })
-                  }
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remove Infographic Mode
-                </Button>
-              </div>
-            </div>
-          )}
           </div> {/* END MEDIA TAB */}
 
           {/* TAB CONTENT: TALKING HEAD AVATAR */}

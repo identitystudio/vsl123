@@ -361,36 +361,7 @@ export function SlidePreview({ slide, scale = 1.5, onHeadshotClick, onSplitImage
             : { height: '100%' }
         }
       >
-        {/* Infographic mode — visual + cycling captions */}
-        {slide.isInfographic ? (
-          <div className="flex flex-col items-center justify-center w-full h-full gap-4">
-            {/* Infographic Visual (emoji/icon/SVG) */}
-            {slide.infographicVisual && (
-              <div className="flex items-center justify-center">
-                {slide.infographicVisual.type === 'svg' ? (
-                  <div
-                    style={{
-                      width: `${120 * scale}px`,
-                      height: `${120 * scale}px`,
-                    }}
-                    dangerouslySetInnerHTML={{
-                      __html: slide.infographicVisual.value.replace(
-                        /<svg/,
-                        `<svg width="100%" height="100%" style="stroke: ${textColor}; fill: none; stroke-width: 2;"`
-                      ),
-                    }}
-                  />
-                ) : (
-                  <span style={{ fontSize: `${80 * scale}px`, lineHeight: 1 }}>
-                    {slide.infographicVisual.value}
-                  </span>
-                )}
-              </div>
-            )}
-            {/* Captions removed per user request */}
-          </div>
-        ) : (
-          <>
+        <>
             {/* Headshot */}
             {slide.headshot && (
               <div 
@@ -498,7 +469,6 @@ export function SlidePreview({ slide, scale = 1.5, onHeadshotClick, onSplitImage
               })}
             </p>
           </>
-        )}
       </div>
 
 
