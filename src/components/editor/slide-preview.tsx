@@ -448,8 +448,12 @@ export function SlidePreview({ slide, scale = 1.5, onHeadshotClick, onSplitImage
                   loop
                   muted
                   playsInline
-                  className="rounded-full object-cover border-2 border-indigo-400 shadow-lg"
-                  style={{ width: (slide.talkingHeadSize || 160) * scale, height: (slide.talkingHeadSize || 160) * scale }}
+                  className="rounded-full object-cover border-2 shadow-lg"
+                  style={{
+                    width: (slide.talkingHeadSize || 160) * scale,
+                    height: (slide.talkingHeadSize || 160) * scale,
+                    borderColor: slide.talkingHeadBorderColor || '#818cf8',
+                  }}
                 />
               </div>
             )}

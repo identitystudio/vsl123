@@ -86,6 +86,7 @@ export interface Slide {
   talkingHeadAsHeadshot?: boolean; // Toggles displaying the generated video as a floating headshot
   talkingHeadPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'inline' | 'headshot-bio'; // Position for floating headshot
   talkingHeadSize?: number;        // Size of the floating headshot in pixels (default 160)
+  talkingHeadBorderColor?: string; // Border color for the circular frame (default '#818cf8' indigo-400)
 
   // Metadata
   sceneNumber?: number;

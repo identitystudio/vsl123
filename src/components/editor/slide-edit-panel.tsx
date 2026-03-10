@@ -9,7 +9,6 @@ import {
   Sparkles,
   Loader2,
   Search,
-  Plus,
   BarChart3,
   Check,
   Pencil,
@@ -18,6 +17,7 @@ import {
   Video,
   User,
   Save,
+  Mic,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -297,6 +297,14 @@ export function SlideEditPanel({
   const avatarVideoInputRef = useRef<HTMLInputElement>(null);
   const avatarTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ElevenLabs Voice Generation state
+  const [elVoices, setElVoices] = useState<{voice_id: string; name: string; category: string}[]>([]);
+  const [elVoiceId, setElVoiceId] = useState(localStorage.getItem('vsl123-elevenlabs-voice') || '');
+  const [elApiKey, setElApiKey] = useState(localStorage.getItem('vsl123-elevenlabs-key') || '');
+  const [elConnected, setElConnected] = useState(false);
+  const [elGenerating, setElGenerating] = useState(false);
+  const [elVoiceSearch, setElVoiceSearch] = useState('');
+
   // Load API key from localStorage
   useEffect(() => {
     const savedKey = localStorage.getItem('vsl123-piapi-key');
@@ -313,6 +321,87 @@ export function SlideEditPanel({
     setAvatarAudioUrl(slide.talkingHeadAudioUrl || slide.audioUrl || '');
     setAvatarPrompt(slide.talkingHeadPrompt || '');
   }, [slide.id]);
+
+  // Auto-load ElevenLabs voices on mount if API key exists
+  useEffect(() => {
+    if (!elApiKey) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/elevenlabs-voices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: elApiKey }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.voices?.length) {
+          setElVoices(data.voices);
+          setElConnected(true);
+        }
+      } catch { /* silent */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleElConnect = async () => {
+    if (!elApiKey.trim()) {
+      toast.error('Enter your ElevenLabs API key');
+      return;
+    }
+    try {
+      const res = await fetch('/api/elevenlabs-voices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: elApiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to connect');
+      setElVoices(data.voices || []);
+      setElConnected(true);
+      localStorage.setItem('vsl123-elevenlabs-key', elApiKey);
+      toast.success(`Connected! ${data.voices?.length || 0} voices loaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to connect to ElevenLabs');
+      setElConnected(false);
+    }
+  };
+
+  const handleGenerateVoice = async () => {
+    if (!elVoiceId || !elApiKey) return;
+    setElGenerating(true);
+    try {
+      const res = await fetch('/api/elevenlabs-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: slide.fullScriptText,
+          voiceId: elVoiceId,
+          apiKey: elApiKey,
+          stability: 0.5,
+          similarityBoost: 0.75,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Voice generation failed');
+      }
+      const data = await res.json();
+      const audioUrl = data.audioContent || data.url;
+      setAvatarAudioUrl(audioUrl);
+      const updates = {
+        talkingHeadAudioUrl: audioUrl,
+        audioUrl: audioUrl,
+        audioDuration: data.duration,
+        audioGenerated: true,
+      };
+      onUpdate({ ...slide, ...updates });
+      onAsyncUpdate?.(slide.id, updates);
+      toast.success('Voice generated successfully!');
+    } catch (err: any) {
+      toast.error(err.message || 'Voice generation failed');
+    } finally {
+      setElGenerating(false);
+    }
+  };
 
   const headshotRef = headshotInputRef || localHeadshotRef;
   const headshotVideoInputRef = useRef<HTMLInputElement>(null);
@@ -1057,18 +1146,55 @@ export function SlideEditPanel({
   };
 
   // Resume polling if slide has an active taskId (e.g. after page refresh)
+  // Do an immediate status check first to avoid showing "Creating Magic..." for stale tasks
   useEffect(() => {
-    if (slide.talkingHeadTaskId && avatarApiKey && !avatarTimerRef.current) {
-      console.log('🔄 Resuming avatar polling for task:', slide.talkingHeadTaskId);
-      toast.info('🔄 Resuming avatar generation check...', { duration: 3000 });
-      startPolling(slide.talkingHeadTaskId);
-    }
+    if (!slide.talkingHeadTaskId || !avatarApiKey || avatarTimerRef.current) return;
+
+    let cancelled = false;
+    const taskId = slide.talkingHeadTaskId;
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/talking-head-avatar-status?taskId=${encodeURIComponent(taskId)}&apiKey=${encodeURIComponent(avatarApiKey)}`
+        );
+        const data = await res.json();
+
+        if (cancelled) return;
+
+        if (data.status === 'completed' && data.videoUrl) {
+          const updates = { talkingHeadVideoUrl: data.videoUrl, talkingHeadTaskId: undefined };
+          onUpdate({ ...slide, ...updates });
+          onAsyncUpdate?.(slide.id, updates);
+          toast.success('Talking head video is ready!');
+          return;
+        }
+        if (data.status === 'failed' || data.error) {
+          const updates = { talkingHeadTaskId: undefined };
+          onUpdate({ ...slide, ...updates });
+          onAsyncUpdate?.(slide.id, updates);
+          return;
+        }
+
+        // Still pending — now start polling
+        if (!cancelled) {
+          startPolling(taskId);
+        }
+      } catch {
+        // Network error on initial check — start polling as fallback
+        if (!cancelled) {
+          startPolling(taskId);
+        }
+      }
+    })();
+
     return () => {
-      // Cleanup polling on unmount
+      cancelled = true;
       if (avatarTimerRef.current) {
         clearInterval(avatarTimerRef.current);
         avatarTimerRef.current = null;
       }
+      setAvatarGenerating(false);
     };
   }, [slide.talkingHeadTaskId, avatarApiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1088,38 +1214,42 @@ export function SlideEditPanel({
     <>
 
       {/* Main Editor Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-        
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 shadow-sm">
+
         {/* Save/Cancel + Navigation — top of panel */}
-        <div className="space-y-3 pb-3 border-b border-gray-100">
+        <div className="pb-4 mb-2 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">
-                &#x2318;+Enter to save &bull; Esc to cancel
+            <div className="flex items-center gap-2.5">
+              <span className="bg-black text-white text-[10px] font-bold px-2.5 py-1 rounded-full tabular-nums tracking-wide">
+                {currentIndex + 1} / {totalSlides}
               </span>
+              <span className="text-[10px] text-gray-300 font-medium hidden sm:inline">
+                &#x2318;+Enter to save
+              </span>
+              <div className="w-px h-4 bg-gray-200 mx-1" />
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onTogglePreview}
-                className={`gap-1.5 h-7 text-[10px] px-2 uppercase tracking-wider font-bold ${showPreviewAll ? 'bg-black text-white hover:bg-black/90' : 'border-gray-200 text-gray-500'}`}
+                className={`gap-1.5 h-7 text-[10px] px-2.5 uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${showPreviewAll ? 'bg-black text-white hover:bg-black/90 shadow-sm' : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300'}`}
               >
                 <BarChart3 className="w-3 h-3" />
-                {showPreviewAll ? 'Hide Preview' : 'Preview project'}
+                {showPreviewAll ? 'Hide Preview' : 'Preview'}
               </Button>
               {onToggleEmotionalBeats && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={onToggleEmotionalBeats}
-                  className={`gap-1.5 h-7 text-[10px] px-2 uppercase tracking-wider font-bold ${showEmotionalBeats ? 'bg-black text-white hover:bg-black/90' : 'border-gray-200 text-gray-500'}`}
+                  className={`gap-1.5 h-7 text-[10px] px-2.5 uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${showEmotionalBeats ? 'bg-black text-white hover:bg-black/90 shadow-sm' : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300'}`}
                 >
                   <Heart className="w-3 h-3" />
-                  Emotional Beats
+                  Beats
                 </Button>
               )}
             </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={onCancel} className="gap-1 h-8 text-xs">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={onCancel} className="gap-1 h-8 text-xs text-gray-400 hover:text-gray-600">
                 <X className="w-3.5 h-3.5" />
                 Cancel
               </Button>
@@ -1128,7 +1258,7 @@ export function SlideEditPanel({
                 variant="outline"
                 onClick={onPrevious}
                 disabled={!canGoPrevious}
-                className="gap-1"
+                className="gap-1 h-9 rounded-lg"
               >
                 <ChevronLeft className="w-4 h-4" />
                 Previous
@@ -1137,7 +1267,7 @@ export function SlideEditPanel({
                 type="button"
                 onClick={handleSaveAndNext}
                 disabled={saving || isSaving}
-                className="bg-black text-white hover:bg-gray-800 gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-black text-white hover:bg-gray-800 gap-1.5 h-9 px-5 rounded-lg font-semibold shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 {(saving || isSaving) ? (
                   <>
@@ -1158,13 +1288,13 @@ export function SlideEditPanel({
         <div className="flex-1 space-y-6">
           
           {/* Custom Tabs Navigation */}
-          <div className="flex flex-col sm:flex-row p-1 bg-gray-100/80 backdrop-blur-sm rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10 w-full mb-2 gap-1">
+          <div className="flex p-1 bg-gray-50 rounded-2xl border border-gray-100 w-full mb-2 gap-1">
             <button
               onClick={() => setActiveTab('text')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                activeTab === 'text' 
-                  ? 'bg-white text-black shadow-sm border border-gray-200/50' 
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+                activeTab === 'text'
+                  ? 'bg-white text-black shadow-sm border border-gray-200/80'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
               }`}
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -1172,25 +1302,31 @@ export function SlideEditPanel({
             </button>
             <button
               onClick={() => setActiveTab('media')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                activeTab === 'media' 
-                  ? 'bg-white text-black shadow-sm border border-gray-200/50' 
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+                activeTab === 'media'
+                  ? 'bg-white text-black shadow-sm border border-gray-200/80'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
               }`}
             >
               <Search className="w-3.5 h-3.5" />
               Media
+              {slide.hasBackgroundImage && activeTab !== 'media' && (
+                <span className="absolute top-1.5 right-3 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+              )}
             </button>
             <button
               onClick={() => setActiveTab('avatar')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                activeTab === 'avatar' 
-                  ? 'bg-black text-white shadow-md ring-1 ring-black' 
-                  : 'text-gray-500 hover:text-black hover:bg-gray-100'
+              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+                activeTab === 'avatar'
+                  ? 'bg-black text-white shadow-md'
+                  : 'text-gray-400 hover:text-black hover:bg-white/50'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
               Talking Head
+              {slide.talkingHeadVideoUrl && activeTab !== 'avatar' && (
+                <span className="absolute top-1.5 right-3 w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              )}
             </button>
           </div>
 
@@ -1202,24 +1338,27 @@ export function SlideEditPanel({
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">&#x1F4DD;</span>
               <span className="font-semibold text-sm">Text Content</span>
-              <span className="text-xs text-gray-400">(click words to style)</span>
+              <span className="text-[10px] text-gray-300 font-medium uppercase tracking-wider">(click words to style)</span>
             </div>
 
             {editingText ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Textarea
                   value={textValue}
                   onChange={(e) => setTextValue(e.target.value)}
-                  className="min-h-[80px] text-sm"
+                  className="min-h-[100px] text-sm rounded-xl border-gray-200 focus:border-black focus:ring-1 focus:ring-black transition-all duration-200"
+                  autoFocus
                 />
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={handleTextSave}>
+                  <Button size="sm" onClick={handleTextSave} className="bg-black text-white hover:bg-gray-800 rounded-lg gap-1.5">
+                    <Check className="w-3 h-3" />
                     Save Text
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => setEditingText(false)}
+                    className="text-gray-400 hover:text-gray-600"
                   >
                     Cancel
                   </Button>
@@ -1227,44 +1366,52 @@ export function SlideEditPanel({
               </div>
             ) : (
               <div
-                className="p-3 rounded-lg border border-gray-100 text-sm leading-relaxed cursor-text"
+                className="p-4 rounded-xl border border-gray-100 border-l-4 border-l-black text-sm leading-loose cursor-text bg-gray-50/30 hover:bg-gray-50 transition-colors duration-200 group/text"
                 onClick={() => setEditingText(true)}
               >
-                {words.map((word, i) => {
-                  const cleanWord = word.replace(/[.,!?;:'"()]/g, '');
-                  const isBold = slide.boldWords?.includes(cleanWord);
-                  const isUnderlined = slide.underlineWords?.includes(cleanWord);
-                  const isRed = slide.redWords?.includes(cleanWord);
-                  const isCircled = slide.circleWords?.includes(cleanWord);
+                <div className="flex flex-wrap gap-y-1">
+                  {words.map((word, i) => {
+                    const cleanWord = word.replace(/[.,!?;:'"()]/g, '');
+                    const isBold = slide.boldWords?.includes(cleanWord);
+                    const isUnderlined = slide.underlineWords?.includes(cleanWord);
+                    const isRed = slide.redWords?.includes(cleanWord);
+                    const isCircled = slide.circleWords?.includes(cleanWord);
+                    const hasEmphasis = isBold || isUnderlined || isRed || isCircled;
 
-                  return (
-                    <span
-                      key={i}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleWordClick(word);
-                      }}
-                      className={`cursor-pointer hover:bg-gray-100 rounded px-0.5 ${
-                        isBold ? 'font-bold' : ''
-                      } ${isUnderlined ? 'underline' : ''} ${
-                        isRed ? 'text-red-600 underline' : ''
-                      } ${isCircled ? 'text-red-600' : ''}`}
-                      title={getEmphasisLabel(cleanWord, slide)}
-                    >
-                      {word}{' '}
-                    </span>
-                  );
-                })}
+                    return (
+                      <span
+                        key={i}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleWordClick(word);
+                        }}
+                        className={`cursor-pointer inline-block px-1 py-0.5 rounded-md transition-all duration-150 hover:bg-gray-200/80 hover:-translate-y-0.5 hover:shadow-sm ${
+                          isBold && !isUnderlined && !isRed && !isCircled ? 'font-bold bg-gray-100 rounded-md' : ''
+                        } ${isUnderlined ? 'underline decoration-2 decoration-red-400 underline-offset-4 font-medium' : ''} ${
+                          isRed ? 'text-red-600 bg-red-50 rounded-md font-medium' : ''
+                        } ${isCircled ? 'text-red-600 ring-1 ring-red-300 rounded-full px-1.5' : ''} ${
+                          !hasEmphasis ? 'text-gray-700' : ''
+                        }`}
+                        title={getEmphasisLabel(cleanWord, slide)}
+                      >
+                        {word}{' '}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-gray-100 opacity-0 group-hover/text:opacity-100 transition-opacity duration-200">
+                  <Pencil className="w-3 h-3 text-gray-300" />
+                  <span className="text-[10px] text-gray-300 font-medium">Click to edit text</span>
+                </div>
               </div>
             )}
           </div>
 
           {/* Word Styling Controls */}
-          <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+          <div className="flex items-center gap-2 bg-gray-50/80 rounded-xl p-2.5 border border-gray-100">
             <Button
-              variant="outline"
               size="sm"
-              className="gap-1"
+              className="gap-1.5 bg-gradient-to-r from-gray-900 to-black text-white hover:from-black hover:to-gray-800 rounded-lg shadow-sm transition-all duration-200"
               onClick={handleAiStyleWords}
               disabled={aiStylingWords}
             >
@@ -1275,10 +1422,11 @@ export function SlideEditPanel({
               )}
               AI Style
             </Button>
+            <div className="w-px h-5 bg-gray-200" />
             <Button
               variant="outline"
               size="sm"
-              className="gap-1"
+              className="gap-1 rounded-lg border-gray-200 hover:border-gray-300 transition-all duration-200"
               onClick={handleBoldAll}
             >
               <Bold className="w-3.5 h-3.5" />
@@ -1287,30 +1435,38 @@ export function SlideEditPanel({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-1 text-gray-400 hover:text-gray-600"
+              className="gap-1 text-gray-400 hover:text-red-500 rounded-lg transition-all duration-200"
               onClick={handleClearEmphasis}
             >
               <X className="w-3.5 h-3.5" />
               Clear
             </Button>
-            <span className="text-xs">Click words to style manually</span>
+            <div className="w-px h-5 bg-gray-200" />
+            {(() => {
+              const styledCount = (slide.boldWords?.length || 0) + (slide.underlineWords?.length || 0) + (slide.redWords?.length || 0) + (slide.circleWords?.length || 0);
+              return styledCount > 0 ? (
+                <span className="text-[10px] font-bold bg-black text-white px-2 py-0.5 rounded-full">{styledCount} styled</span>
+              ) : (
+                <span className="text-[10px] text-gray-300 font-medium">No styles applied</span>
+              );
+            })()}
           </div>
 
           {/* Slide Styling */}
           <div>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-4">
               <span>&#x1F3A8;</span>
               <span className="font-semibold text-sm">Slide Styling</span>
             </div>
 
             {/* Quick Presets */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm text-gray-500">Quick Presets:</span>
+            <div className="flex items-center gap-3 mb-5">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quick Presets</span>
               <Select
                 value={currentPreset}
                 onValueChange={(v) => handlePresetChange(v as PresetType)}
               >
-                <SelectTrigger className="w-48">
+                <SelectTrigger className="w-48 rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1323,12 +1479,15 @@ export function SlideEditPanel({
               </Select>
             </div>
 
+            {/* Gradient divider */}
+            <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-5" />
+
             {/* Background / Text Color / Text Size */}
             <div className="grid grid-cols-3 gap-4">
               {/* Background */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Background</span>
-                <div className="flex gap-1">
+              <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Background</span>
+                <div className="flex gap-1.5">
                   {(['white', 'dark', 'image'] as const).map((bg) => (
                     <button
                       key={bg}
@@ -1347,11 +1506,11 @@ export function SlideEditPanel({
                           });
                         }
                       }}
-                      className={`px-3 py-1.5 text-xs rounded-md border capitalize ${
+                      className={`px-3 py-1.5 text-xs rounded-lg border-2 capitalize transition-all duration-200 ${
                         slide.style.background === bg ||
                         (bg === 'image' && (slide.style.background === 'image' || slide.style.background === 'split'))
-                          ? 'bg-black text-white border-black'
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? 'bg-black text-white border-black shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-white'
                       }`}
                     >
                       {bg === 'dark' ? 'Dark' : bg === 'image' ? 'Image' : 'White'}
@@ -1361,9 +1520,9 @@ export function SlideEditPanel({
               </div>
 
               {/* Text Color */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Text Color</span>
-                <div className="flex gap-1">
+              <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Text Color</span>
+                <div className="flex gap-1.5">
                   {(['white', 'black'] as const).map((color) => (
                     <button
                       key={color}
@@ -1373,12 +1532,12 @@ export function SlideEditPanel({
                           style: { ...slide.style, textColor: color },
                         })
                       }
-                      className={`px-4 py-1.5 text-xs rounded-md border capitalize ${
+                      className={`px-4 py-1.5 text-xs rounded-lg border-2 capitalize transition-all duration-200 ${
                         slide.style.textColor === color
                           ? color === 'black'
-                            ? 'bg-black text-white border-black'
-                            : 'bg-white text-black border-black'
-                          : 'border-gray-200 hover:border-gray-300'
+                            ? 'bg-black text-white border-black shadow-sm'
+                            : 'bg-white text-black border-black shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-white'
                       }`}
                     >
                       {color}
@@ -1388,8 +1547,8 @@ export function SlideEditPanel({
               </div>
 
               {/* Text Size */}
-              <div>
-                <span className="text-xs text-gray-500 mb-2 block">Text Size</span>
+              <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Text Size</span>
                 <Select
                   value={String(slide.style.textSize)}
                   onValueChange={(v) =>
@@ -1399,7 +1558,7 @@ export function SlideEditPanel({
                     })
                   }
                 >
-                  <SelectTrigger className="w-24">
+                  <SelectTrigger className="w-24 rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1417,7 +1576,8 @@ export function SlideEditPanel({
 
           {/* Emotional Context */}
           {(slide.emotionalBeat || slide.visualPrompt) && (
-            <div className="space-y-3 pt-4 border-t border-gray-100">
+            <div className="space-y-3 pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
                <div className="flex items-center gap-2 mb-2">
                  <span className="text-lg">❤️</span>
                  <span className="font-semibold text-sm">Emotional Context</span>
@@ -1500,41 +1660,44 @@ export function SlideEditPanel({
               </div>
 
               {/* 3 Display Mode buttons */}
-              <div className="mb-3">
-                <span className="text-xs text-gray-500 mb-2 block">Image Style</span>
+              <div className="mb-4">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Image Style</span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDisplayMode('blurred')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                    className={`flex-1 px-3 py-3 text-xs rounded-xl border-2 transition-all duration-200 hover:-translate-y-0.5 ${
                       currentDisplayMode === 'blurred'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-black bg-gray-50 shadow-sm ring-1 ring-black/5'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                     }`}
                   >
-                    <div className="font-medium mb-0.5">Blurred</div>
-                    <div className="text-gray-400">Soft image behind text</div>
+                    <div className="text-base mb-1">&#x1F32B;</div>
+                    <div className="font-bold text-[11px] mb-0.5">Blurred</div>
+                    <div className="text-gray-400 text-[10px]">Soft backdrop</div>
                   </button>
                   <button
                     onClick={() => handleDisplayMode('crisp')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                    className={`flex-1 px-3 py-3 text-xs rounded-xl border-2 transition-all duration-200 hover:-translate-y-0.5 ${
                       currentDisplayMode === 'crisp'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-black bg-gray-50 shadow-sm ring-1 ring-black/5'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                     }`}
                   >
-                    <div className="font-medium mb-0.5">Crisp</div>
-                    <div className="text-gray-400">Clear image, text on top</div>
+                    <div className="text-base mb-1">&#x2728;</div>
+                    <div className="font-bold text-[11px] mb-0.5">Crisp</div>
+                    <div className="text-gray-400 text-[10px]">Full clarity</div>
                   </button>
                   <button
                     onClick={() => handleDisplayMode('split')}
-                    className={`flex-1 px-3 py-2 text-xs rounded-lg border-2 transition-all ${
+                    className={`flex-1 px-3 py-3 text-xs rounded-xl border-2 transition-all duration-200 hover:-translate-y-0.5 ${
                       currentDisplayMode === 'split'
-                        ? 'border-black bg-gray-50 font-medium'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-black bg-gray-50 shadow-sm ring-1 ring-black/5'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                     }`}
                   >
-                    <div className="font-medium mb-0.5">Split</div>
-                    <div className="text-gray-400">Image top, text bottom</div>
+                    <div className="text-base mb-1">&#x25E8;</div>
+                    <div className="font-bold text-[11px] mb-0.5">Split</div>
+                    <div className="text-gray-400 text-[10px]">Image + text</div>
                   </button>
                 </div>
               </div>
@@ -1991,6 +2154,116 @@ export function SlideEditPanel({
                       )}
                     </div>
                   </div>
+
+                  {/* ElevenLabs Voice Generation */}
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Mic className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-[10px] font-bold text-black uppercase tracking-wider">Generate Voice</span>
+                      {elConnected && (
+                        <span className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Connected</span>
+                      )}
+                    </div>
+
+                    {/* API Key + Connect */}
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        value={elApiKey}
+                        onChange={(e) => setElApiKey(e.target.value)}
+                        placeholder="ElevenLabs API Key"
+                        className="h-8 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded-lg flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        variant={elConnected ? 'outline' : 'default'}
+                        onClick={handleElConnect}
+                        className={`h-8 text-[10px] font-bold uppercase tracking-wider rounded-lg px-3 ${elConnected ? 'border-green-300 text-green-700' : 'bg-black text-white hover:bg-gray-800'}`}
+                      >
+                        {elConnected ? <Check className="w-3 h-3" /> : 'Connect'}
+                      </Button>
+                    </div>
+
+                    {/* Voice Selection */}
+                    {elConnected && elVoices.length > 0 && (
+                      <div className="space-y-2">
+                        {/* Search Input */}
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                          <Input
+                            value={elVoiceSearch}
+                            onChange={(e) => setElVoiceSearch(e.target.value)}
+                            placeholder="Search voices..."
+                            className="h-8 text-[10px] border-gray-200 focus:border-black focus:ring-0 rounded-lg pl-7"
+                          />
+                        </div>
+
+                        {/* Voice List */}
+                        <div className="max-h-[160px] overflow-y-auto rounded-lg border border-gray-200 bg-white divide-y divide-gray-50">
+                          {elVoices
+                            .filter((v) => {
+                              if (!elVoiceSearch.trim()) return true;
+                              const q = elVoiceSearch.toLowerCase();
+                              return v.name.toLowerCase().includes(q) || v.category.toLowerCase().includes(q);
+                            })
+                            .map((v) => (
+                              <button
+                                key={v.voice_id}
+                                type="button"
+                                onClick={() => {
+                                  setElVoiceId(v.voice_id);
+                                  localStorage.setItem('vsl123-elevenlabs-voice', v.voice_id);
+                                }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-100 ${
+                                  elVoiceId === v.voice_id
+                                    ? 'bg-black text-white'
+                                    : 'hover:bg-gray-50 text-gray-700'
+                                }`}
+                              >
+                                {v.category === 'cloned' && (
+                                  <span className={`text-[10px] ${elVoiceId === v.voice_id ? 'text-yellow-300' : 'text-yellow-500'}`}>★</span>
+                                )}
+                                <span className="text-xs font-medium flex-1 truncate">{v.name}</span>
+                                <span className={`text-[9px] font-medium ${elVoiceId === v.voice_id ? 'text-gray-300' : 'text-gray-400'}`}>{v.category}</span>
+                                {elVoiceId === v.voice_id && <Check className="w-3 h-3 flex-shrink-0" />}
+                              </button>
+                            ))}
+                          {elVoices.filter((v) => {
+                            if (!elVoiceSearch.trim()) return true;
+                            const q = elVoiceSearch.toLowerCase();
+                            return v.name.toLowerCase().includes(q) || v.category.toLowerCase().includes(q);
+                          }).length === 0 && (
+                            <div className="px-3 py-4 text-center text-[10px] text-gray-400">No voices match your search</div>
+                          )}
+                        </div>
+
+                        {/* Generate Voice Button */}
+                        <Button
+                          size="sm"
+                          onClick={handleGenerateVoice}
+                          disabled={!elVoiceId || elGenerating}
+                          className="w-full h-9 bg-gradient-to-r from-gray-900 to-black text-white hover:from-black hover:to-gray-800 rounded-lg font-bold text-[10px] uppercase tracking-wider gap-2 disabled:opacity-50"
+                        >
+                          {elGenerating ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="w-3.5 h-3.5" />
+                              Generate Voice for This Slide
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Audio Preview */}
+                    {avatarAudioUrl && (
+                      <audio src={avatarAudioUrl} controls className="w-full h-8 mt-1" />
+                    )}
+                  </div>
                 </div>
 
                 {/* Generate Action */}
@@ -2133,6 +2406,44 @@ export function SlideEditPanel({
                     </div>
                   )}
 
+                  {/* Border Color */}
+                  {slide.talkingHeadAsHeadshot && (
+                    <div className="pt-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Frame Color</span>
+                        <span className="text-[10px] text-gray-400 font-mono">{slide.talkingHeadBorderColor || '#818cf8'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {['#818cf8', '#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#14b8a6', 'transparent'].map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => onUpdate({ ...slide, talkingHeadBorderColor: color })}
+                            className={`w-6 h-6 rounded-full border-2 transition-all duration-150 hover:scale-110 ${
+                              (slide.talkingHeadBorderColor || '#818cf8') === color
+                                ? 'ring-2 ring-black ring-offset-1 scale-110'
+                                : 'border-gray-200'
+                            } ${color === 'transparent' ? 'bg-[repeating-conic-gradient(#e5e7eb_0%_25%,transparent_0%_50%)] bg-[length:8px_8px]' : ''}`}
+                            style={color !== 'transparent' ? { backgroundColor: color } : undefined}
+                            title={color === 'transparent' ? 'No border' : color}
+                          />
+                        ))}
+                        <div className="w-px h-5 bg-gray-200 mx-1" />
+                        <label className="relative cursor-pointer" title="Custom color">
+                          <input
+                            type="color"
+                            value={slide.talkingHeadBorderColor || '#818cf8'}
+                            onChange={(e) => onUpdate({ ...slide, talkingHeadBorderColor: e.target.value })}
+                            className="absolute inset-0 w-6 h-6 opacity-0 cursor-pointer"
+                          />
+                          <div className="w-6 h-6 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-black transition-colors">
+                            <Pencil className="w-2.5 h-2.5 text-gray-400" />
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               ) : (
                 <div 
@@ -2149,14 +2460,17 @@ export function SlideEditPanel({
           </div> {/* END TALKING HEAD TAB */}
 
           {/* Apply to all Toggle */}
-          <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+          <div className="pt-4">
+            <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-4" />
             <button
               onClick={() => setApplyToAll(!applyToAll)}
-              className="flex items-center gap-3 group px-1 cursor-pointer"
+              className={`flex items-center gap-3 group px-4 py-3 cursor-pointer rounded-xl border-2 transition-all duration-200 w-full ${
+                applyToAll ? 'border-black bg-gray-50 shadow-sm' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'
+              }`}
               type="button"
             >
-              <div 
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out ${
+              <div
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out flex-shrink-0 ${
                   applyToAll ? 'bg-black' : 'bg-gray-200'
                 }`}
               >
@@ -2166,7 +2480,7 @@ export function SlideEditPanel({
                   }`}
                 />
               </div>
-              <span className="text-sm font-semibold text-gray-700 group-hover:text-black transition-colors">
+              <span className={`text-sm font-semibold transition-colors ${applyToAll ? 'text-black' : 'text-gray-500 group-hover:text-gray-700'}`}>
                 Apply style to all remaining slides
               </span>
             </button>
