@@ -1574,6 +1574,75 @@ export function SlideEditPanel({
 
           </div>
 
+          {/* Slide Transition */}
+          <div>
+            <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-5" />
+            <div className="flex items-center gap-2 mb-4">
+              <span>&#x1F3AC;</span>
+              <span className="font-semibold text-sm">Slide Transition</span>
+              <span className="text-[10px] text-gray-400 font-medium ml-auto">
+                Transition into this slide
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Effect</span>
+                <Select
+                  value={slide.transition || 'none'}
+                  onValueChange={(v) =>
+                    onUpdate({
+                      ...slide,
+                      transition: v as Slide['transition'],
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-full rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: 'none', label: 'None (Hard Cut)' },
+                      { value: 'fade', label: 'Fade' },
+                      { value: 'dissolve', label: 'Dissolve' },
+                      { value: 'wipeleft', label: 'Wipe Left' },
+                      { value: 'wiperight', label: 'Wipe Right' },
+                      { value: 'slideleft', label: 'Slide Left' },
+                      { value: 'slideright', label: 'Slide Right' },
+                      { value: 'slideup', label: 'Slide Up' },
+                      { value: 'slidedown', label: 'Slide Down' },
+                    ].map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">
+                  Duration: {(slide.transitionDuration || 0.5).toFixed(1)}s
+                </span>
+                <input
+                  type="range"
+                  min="0.3"
+                  max="1.5"
+                  step="0.1"
+                  value={slide.transitionDuration || 0.5}
+                  onChange={(e) =>
+                    onUpdate({
+                      ...slide,
+                      transitionDuration: parseFloat(e.target.value),
+                    })
+                  }
+                  disabled={!slide.transition || slide.transition === 'none'}
+                  className="w-full accent-black"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Emotional Context */}
           {(slide.emotionalBeat || slide.visualPrompt) && (
             <div className="space-y-3 pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">

@@ -1504,6 +1504,8 @@ export function PreviewExport({
                           talkingHeadSize: slide.talkingHeadSize,
                           talkingHeadX: thX,
                           talkingHeadY: thY,
+                          transition: slide.transition || 'none',
+                          transitionDuration: slide.transitionDuration || 0.5,
                           htmlContent: renderedElement.outerHTML
                         });
                       root.unmount();
@@ -1684,6 +1686,8 @@ export function PreviewExport({
                           talkingHeadSize: slide.talkingHeadSize,
                           talkingHeadX: thX,
                           talkingHeadY: thY,
+                          transition: slide.transition || 'none',
+                          transitionDuration: slide.transitionDuration || 0.5,
                           htmlContent: renderedElement.outerHTML
                         });
                       root.unmount();

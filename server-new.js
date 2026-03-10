@@ -394,6 +394,112 @@ const createSegmentWithBackgroundVideo = async (slide, idx, framesDir, audioDir,
 };
 
 // -------------------------
+// CONCAT WITH TRANSITIONS (xfade)
+// -------------------------
+
+const concatWithTransitions = async (segDir, slides, finalPath) => {
+    const segFiles = (await fs.readdir(segDir))
+        .filter(f => f.endsWith('.mp4'))
+        .sort();
+
+    if (segFiles.length === 0) throw new Error('No segments found');
+    if (segFiles.length === 1) {
+        await fs.copy(path.join(segDir, segFiles[0]), finalPath);
+        return;
+    }
+
+    // Get duration of each segment
+    const durations = [];
+    for (const f of segFiles) {
+        const dur = await getVideoDuration(path.join(segDir, f));
+        durations.push(dur);
+    }
+
+    // Check if any slide has a non-none transition
+    const hasAnyTransition = slides.some((s, i) => i > 0 && s.transition && s.transition !== 'none');
+
+    if (!hasAnyTransition) {
+        // Fall back to simple concat (stream copy)
+        const list = segFiles.map(f => `file '${f}'`).join('\n');
+        await fs.writeFile(path.join(segDir, '..', 'list.txt'), list);
+        await runCmd(`cd "${segDir}" && ffmpeg -y -f concat -safe 0 -i ../list.txt -c copy "${finalPath}"`);
+        return;
+    }
+
+    // STRATEGY: xfade overlaps video, which shortens the total video duration.
+    // But audio must play sequentially (no overlap, no cutting speech).
+    // To keep them in sync, we PAD each segment's VIDEO with frozen frames (tpad)
+    // by the transition duration. When xfade then "eats" those extra frames during
+    // the overlap, the effective video duration = original audio duration. Perfect sync.
+
+    const paddedDurations = [...durations];
+
+    for (let i = 0; i < segFiles.length - 1; i++) {
+        const nextSlide = slides[i + 1];
+        const hasTransition = nextSlide && nextSlide.transition && nextSlide.transition !== 'none';
+        if (!hasTransition) continue;
+
+        const transDur = nextSlide.transitionDuration || 0.5;
+        const segPath = path.join(segDir, segFiles[i]);
+        const paddedPath = path.join(segDir, `_pad_${segFiles[i]}`);
+
+        // tpad clones the last video frame for transDur extra seconds.
+        // Audio stays at original length (-c:a copy). This creates a segment where
+        // video is slightly longer than audio — the "extra" frozen frames are what
+        // xfade will consume during the transition overlap.
+        console.log(`Padding segment ${i} with ${transDur}s frozen frames for transition...`);
+        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=stop_mode=clone:stop_duration=${transDur}" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${paddedPath}"`);
+
+        await fs.move(paddedPath, segPath, { overwrite: true });
+        paddedDurations[i] = durations[i] + transDur;
+    }
+
+    // Build xfade filter chain using PADDED durations for video
+    const inputs = segFiles.map(f => `-i "${path.join(segDir, f)}"`).join(' ');
+    let videoFilter = '';
+    let cumulativeOffset = 0;
+
+    for (let i = 0; i < segFiles.length - 1; i++) {
+        const nextSlide = slides[i + 1];
+        const transition = (nextSlide && nextSlide.transition && nextSlide.transition !== 'none')
+            ? nextSlide.transition : null;
+        const transDur = (nextSlide && nextSlide.transitionDuration) || 0.5;
+
+        const prevLabel = i === 0 ? `[0:v]` : `[v${i}]`;
+        const nextLabel = `[${i + 1}:v]`;
+        const outLabel = i === segFiles.length - 2 ? `[vout]` : `[v${i + 1}]`;
+
+        if (transition) {
+            // offset = where the transition starts on the output timeline
+            // paddedDurations[i] - transDur = original duration (the transition eats the padded part)
+            const offset = Math.max(0, cumulativeOffset + paddedDurations[i] - transDur);
+            videoFilter += `${prevLabel}${nextLabel}xfade=transition=${transition}:duration=${transDur}:offset=${offset.toFixed(3)}${outLabel};`;
+            cumulativeOffset = offset;
+        } else {
+            // Hard cut — no padding was added, use full duration
+            const offset = cumulativeOffset + paddedDurations[i];
+            videoFilter += `${prevLabel}${nextLabel}xfade=transition=fade:duration=0.001:offset=${offset.toFixed(3)}${outLabel};`;
+            cumulativeOffset = offset;
+        }
+    }
+
+    videoFilter = videoFilter.replace(/;$/, '');
+
+    // Audio: simple sequential concat — each slide's voiceover plays fully, no overlap
+    let audioFilter = '';
+    for (let i = 0; i < segFiles.length; i++) {
+        audioFilter += `[${i}:a]`;
+    }
+    audioFilter += `concat=n=${segFiles.length}:v=0:a=1[aout]`;
+
+    const filterComplex = `${videoFilter};${audioFilter}`;
+    const cmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -r 30 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`;
+
+    console.log('Transition concat command:', cmd.substring(0, 500) + '...');
+    await runCmd(cmd);
+};
+
+// -------------------------
 // MAIN ROUTE
 // -------------------------
 
@@ -457,16 +563,8 @@ app.post(['/render', '/render-zip'], async (req, res) => {
                 updateJob({ progress: 75 + Math.floor((i / slides.length) * 20) });
             }
 
-            const list = (await fs.readdir(segDir))
-                .filter(f => f.endsWith('.mp4'))
-                .sort()
-                .map(f => `file 'segments/${f}'`)
-                .join('\n');
-
-            await fs.writeFile(path.join(workDir, 'list.txt'), list);
-
-            // Concat with stream copy to perfectly preserve the exact synced timestamps 
-            await runCmd(`cd "${workDir}" && ffmpeg -y -f concat -safe 0 -i list.txt -c copy "${finalPath}"`);
+            // Concat segments — with xfade transitions if any slide has one
+            await concatWithTransitions(segDir, slides, finalPath);
         }
 
         updateJob({ status: 'completed', progress: 100, downloadUrl: `/outputs/${finalFilename}` });

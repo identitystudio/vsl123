@@ -88,6 +88,10 @@ export interface Slide {
   talkingHeadSize?: number;        // Size of the floating headshot in pixels (default 160)
   talkingHeadBorderColor?: string; // Border color for the circular frame (default '#818cf8' indigo-400)
 
+  // Transition
+  transition?: 'none' | 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideup' | 'slidedown' | 'slideleft' | 'slideright';
+  transitionDuration?: number; // seconds, default 0.5
+
   // Metadata
   sceneNumber?: number;
   sceneTitle?: string;
