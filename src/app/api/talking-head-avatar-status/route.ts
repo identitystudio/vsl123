@@ -2,6 +2,11 @@ import crypto from 'crypto';
 
 const PIAPI_BASE = 'https://api.piapi.ai/api/v1/task';
 
+// Cache completed task results to avoid re-uploading the same video
+const completedTasks = new Map<string, string>();
+// Track in-flight uploads to prevent parallel uploads for the same taskId
+const pendingUploads = new Map<string, Promise<string | null>>();
+
 /**
  * GET /api/talking-head-avatar-status?taskId=xxx&apiKey=xxx
  * 
@@ -102,12 +107,33 @@ export async function GET(req: Request) {
         });
       }
 
-      // Persist video to Cloudinary for permanent storage
-      const permanentUrl = await persistVideoToCloudinary(videoUrl);
+      // Return cached result if already uploaded
+      const cached = completedTasks.get(taskId);
+      if (cached) {
+        return Response.json({
+          status: "completed",
+          videoUrl: cached,
+          taskId,
+          success: true,
+        });
+      }
+
+      // Deduplicate in-flight uploads for the same taskId
+      let uploadPromise = pendingUploads.get(taskId);
+      if (!uploadPromise) {
+        uploadPromise = persistVideoToCloudinary(videoUrl);
+        pendingUploads.set(taskId, uploadPromise);
+      }
+
+      const permanentUrl = await uploadPromise;
+      pendingUploads.delete(taskId);
+
+      const finalUrl = permanentUrl || videoUrl;
+      completedTasks.set(taskId, finalUrl);
 
       return Response.json({
         status: "completed",
-        videoUrl: permanentUrl || videoUrl,
+        videoUrl: finalUrl,
         taskId,
         success: true,
       });
@@ -148,7 +174,7 @@ async function persistVideoToCloudinary(videoUrl: string): Promise<string | null
     if (!videoResponse.ok) return null;
 
     const videoBuffer = await videoResponse.arrayBuffer();
-    const base64Video = Buffer.from(videoBuffer).toString('base64');
+    const blob = new Blob([videoBuffer], { type: 'video/mp4' });
 
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = `avatar_video_${Date.now()}`;
@@ -167,7 +193,7 @@ async function persistVideoToCloudinary(videoUrl: string): Promise<string | null
     const signature = crypto.createHash('sha1').update(sortedParams + clApiSecret).digest('hex');
 
     const formData = new FormData();
-    formData.append('file', `data:video/mp4;base64,${base64Video}`);
+    formData.append('file', blob, `${publicId}.mp4`);
     formData.append('api_key', clApiKey);
     formData.append('timestamp', timestamp.toString());
     formData.append('folder', 'vsl123-talking-heads');

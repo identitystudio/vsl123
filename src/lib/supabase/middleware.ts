@@ -4,9 +4,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[Middleware] Missing Supabase env vars');
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       global: {
         headers: {
@@ -33,9 +41,14 @@ export async function updateSession(request: NextRequest) {
   const start = Date.now();
   console.log(`📡 [Middleware] Start for ${request.nextUrl.pathname}`);
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (error) {
+    console.error(`[Middleware] getUser failed for ${request.nextUrl.pathname}:`, error);
+    return supabaseResponse;
+  }
 
   console.log(`⏱️ [Middleware] getUser finished in ${Date.now() - start}ms for ${request.nextUrl.pathname}`);
 

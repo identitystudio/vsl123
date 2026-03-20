@@ -408,7 +408,7 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
         return;
     }
 
-    // Get duration of each segment
+    // Get duration of each segment (original, before any padding)
     const durations = [];
     for (const f of segFiles) {
         const dur = await getVideoDuration(path.join(segDir, f));
@@ -426,38 +426,35 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
         return;
     }
 
-    // STRATEGY: xfade overlaps video, which shortens the total video duration.
-    // But audio must play sequentially (no overlap, no cutting speech).
-    // To keep them in sync, we PAD each segment's VIDEO with frozen frames (tpad)
-    // by the transition duration. When xfade then "eats" those extra frames during
-    // the overlap, the effective video duration = original audio duration. Perfect sync.
+    // STRATEGY: PRE-ROLL — add frozen first frame to the START of each incoming segment.
+    // xfade blends the outgoing slide's real ending with the incoming slide's frozen first frame.
+    // When the transition ends, the incoming slide's actual content + audio start at the same moment.
+    // This keeps video and audio perfectly in sync.
 
-    const paddedDurations = [...durations];
-
-    for (let i = 0; i < segFiles.length - 1; i++) {
-        const nextSlide = slides[i + 1];
-        const hasTransition = nextSlide && nextSlide.transition && nextSlide.transition !== 'none';
+    for (let i = 1; i < segFiles.length; i++) {
+        const slide = slides[i];
+        const hasTransition = slide && slide.transition && slide.transition !== 'none';
         if (!hasTransition) continue;
 
-        const transDur = nextSlide.transitionDuration || 0.5;
+        const transDur = slide.transitionDuration || 0.5;
         const segPath = path.join(segDir, segFiles[i]);
-        const paddedPath = path.join(segDir, `_pad_${segFiles[i]}`);
+        const prerolledPath = path.join(segDir, `_preroll_${segFiles[i]}`);
 
-        // tpad clones the last video frame for transDur extra seconds.
-        // Audio stays at original length (-c:a copy). This creates a segment where
-        // video is slightly longer than audio — the "extra" frozen frames are what
-        // xfade will consume during the transition overlap.
-        console.log(`Padding segment ${i} with ${transDur}s frozen frames for transition...`);
-        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=stop_mode=clone:stop_duration=${transDur}" -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${paddedPath}"`);
+        // tpad start_mode=clone prepends frozen copies of the first frame.
+        // Audio is untouched (-c:a copy), so it still starts at its original position.
+        console.log(`Pre-rolling segment ${i} with ${transDur}s frozen first frame for transition...`);
+        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=start_mode=clone:start_duration=${transDur}" -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${prerolledPath}"`);
 
-        await fs.move(paddedPath, segPath, { overwrite: true });
-        paddedDurations[i] = durations[i] + transDur;
+        await fs.move(prerolledPath, segPath, { overwrite: true });
     }
 
-    // Build xfade filter chain using PADDED durations for video
+    // Build xfade filter chain
+    // With pre-roll, each incoming segment's video is transDur longer at the start.
+    // xfade offset = cumulative output duration - transDur (transition starts before current end).
+    // After xfade, the output duration grows by the original segment duration (pre-roll is consumed).
     const inputs = segFiles.map(f => `-i "${path.join(segDir, f)}"`).join(' ');
     let videoFilter = '';
-    let cumulativeOffset = 0;
+    let cumulativeVideoDur = durations[0]; // Running output video duration
 
     for (let i = 0; i < segFiles.length - 1; i++) {
         const nextSlide = slides[i + 1];
@@ -470,22 +467,25 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
         const outLabel = i === segFiles.length - 2 ? `[vout]` : `[v${i + 1}]`;
 
         if (transition) {
-            // offset = where the transition starts on the output timeline
-            // paddedDurations[i] - transDur = original duration (the transition eats the padded part)
-            const offset = Math.max(0, cumulativeOffset + paddedDurations[i] - transDur);
+            // Transition starts transDur before the current output ends.
+            // The pre-roll frozen frames fill the transition, then actual content begins.
+            const offset = Math.max(0, cumulativeVideoDur - transDur);
             videoFilter += `${prevLabel}${nextLabel}xfade=transition=${transition}:duration=${transDur}:offset=${offset.toFixed(3)}${outLabel};`;
-            cumulativeOffset = offset;
+            // After xfade: output grew by original duration of next segment
+            // (pre-roll transDur was consumed by the overlap)
+            cumulativeVideoDur = offset + transDur + durations[i + 1];
         } else {
-            // Hard cut — no padding was added, use full duration
-            const offset = cumulativeOffset + paddedDurations[i];
+            // Hard cut — no pre-roll was added, just place next segment after current
+            const offset = cumulativeVideoDur;
             videoFilter += `${prevLabel}${nextLabel}xfade=transition=fade:duration=0.001:offset=${offset.toFixed(3)}${outLabel};`;
-            cumulativeOffset = offset;
+            cumulativeVideoDur = offset + durations[i + 1];
         }
     }
 
     videoFilter = videoFilter.replace(/;$/, '');
 
-    // Audio: simple sequential concat — each slide's voiceover plays fully, no overlap
+    // Audio: simple sequential concat — each slide's voiceover plays fully, no overlap.
+    // Total audio = sum(durations) which matches total video from the xfade chain.
     let audioFilter = '';
     for (let i = 0; i < segFiles.length; i++) {
         audioFilter += `[${i}:a]`;

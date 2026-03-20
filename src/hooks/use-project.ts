@@ -10,25 +10,36 @@ export function useProject(projectId: string) {
   return useQuery({
     queryKey: ['project', projectId],
     queryFn: async () => {
-      // Parallelize fetches for maximum speed
-      const [projectRes, slidesRes] = await Promise.all([
-        supabase.from('vsl_projects').select('*').eq('id', projectId).maybeSingle(),
-        supabase.from('slides').select('*').eq('project_id', projectId).order('order_index', { ascending: true })
-      ]);
+      // 1. Fetch project meta
+      const { data: project, error: projectError } = await supabase
+        .from('vsl_projects')
+        .select('*')
+        .eq('id', projectId)
+        .maybeSingle();
 
-      if (projectRes.error) throw projectRes.error;
-      if (slidesRes.error) throw slidesRes.error;
+      if (projectError) throw projectError;
 
-      if (!projectRes.data) return null;
+      if (!project) {
+        return null;
+      }
 
-      // Map DB slides to UI format
-      const formattedSlides = (slidesRes.data || []).map((s) => ({
+      // 2. Fetch slides from the separate table
+      const { data: slides, error: slidesError } = await supabase
+        .from('slides')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('order_index', { ascending: true }); 
+
+      if (slidesError) throw slidesError;
+
+      // Map DB slides to the format the UI expects
+      const formattedSlides = (slides || []).map((s) => ({
         ...s.data,
-        id: s.id,
+        id: s.id, // Use the DB UUID as the slide ID
       }));
 
       return {
-        ...projectRes.data,
+        ...project,
         slides: formattedSlides,
       } as unknown as VslProject;
     },
@@ -157,6 +168,7 @@ export function useUpdateSlides() {
  */
 export function useUpdateSingleSlide() {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({
       slideId,
@@ -166,6 +178,7 @@ export function useUpdateSingleSlide() {
       updates: Partial<Slide>;
     }) => {
       // Use jsonb concatenation (||) to merge updates into existing data
+      // This avoids fetching the entire data blob (which may contain multi-MB video base64)
       const { data, error } = await supabase.rpc('merge_slide_data', {
         p_slide_id: slideId,
         p_updates: updates,
@@ -200,57 +213,16 @@ export function useUpdateSingleSlide() {
         }
         throw error;
       }
+
       return data;
     },
-    /**
-     * Optimistically update the slide in the cache
-     */
-    onMutate: async ({ slideId, updates }) => {
-      // Find the project ID that contains this slide
-      const queryData = queryClient.getQueriesData<VslProject>({ queryKey: ['project'] });
-      let targetProjectId: string | null = null;
-      
-      for (const [key, project] of queryData) {
-        if (project?.slides?.some(s => s.id === slideId)) {
-          targetProjectId = (key[1] as string);
-          break;
+    onSuccess: (data) => {
+      if (data) {
+        const projectId = data.project_id;
+        if (projectId) {
+          queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+          queryClient.invalidateQueries({ queryKey: ['projects'] });
         }
-      }
-
-      if (targetProjectId) {
-        await queryClient.cancelQueries({ queryKey: ['project', targetProjectId] });
-        const previousProject = queryClient.getQueryData(['project', targetProjectId]);
-
-        queryClient.setQueryData(['project', targetProjectId], (old: VslProject | undefined) => {
-          if (!old) return old;
-          return {
-            ...old,
-            slides: old.slides.map(s => s.id === slideId ? { ...s, ...updates } : s)
-          };
-        });
-
-        return { previousProject, targetProjectId };
-      }
-      return {};
-    },
-    onError: (err, variables, context: any) => {
-      if (context?.previousProject && context?.targetProjectId) {
-        queryClient.setQueryData(['project', context.targetProjectId], context.previousProject);
-      }
-    },
-    onSuccess: (data: any, variables, context: any) => {
-      const projectId = context?.targetProjectId || data?.project_id;
-      if (projectId) {
-        // Update local cache manually instead of invalidating
-        queryClient.setQueryData(['project', projectId], (old: VslProject | undefined) => {
-          if (!old) return old;
-          return {
-            ...old,
-            slides: old.slides.map(s => s.id === variables.slideId ? { ...s, ...variables.updates } : s)
-          };
-        });
-        // We still invalidate the list view but not the individual project
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
       }
     },
   });
@@ -278,12 +250,7 @@ export function useUpdateSettings() {
       return data;
     },
     onSuccess: (data) => {
-      // Update local cache manually
-      queryClient.setQueryData(['project', data.id], (old: VslProject | undefined) => {
-        if (!old) return old;
-        return { ...old, settings: data.settings };
-      });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['project', data.id] });
     },
   });
 }

@@ -1400,10 +1400,10 @@ export function PreviewExport({
 
                     for (let i = 0; i < slides.length; i++) {
                       const slide = slides[i];
-                      
-                      // Upload background video to Cloudinary if it exists
+
+                      // Upload background video to Cloudinary if it exists and isn't already on Cloudinary
                       let cloudinaryVideoUrl = slide.backgroundVideoUrl;
-                      if (slide.backgroundVideoUrl) {
+                      if (slide.backgroundVideoUrl && !slide.backgroundVideoUrl.includes('cloudinary.com')) {
                         try {
                           toast.info(`Uploading background video ${i + 1}/${slides.length} to Cloudinary...`);
                           const videoResponse = await fetch(slide.backgroundVideoUrl);
@@ -1494,6 +1494,13 @@ export function PreviewExport({
                         console.log(`TH position for slide ${i}: x=${thX}, y=${thY}, size=${thSize}, position=${pos}`);
                       }
 
+                        // Strip base64 data URIs from rendered HTML to reduce payload size
+                        // The VPS will re-fetch images from Cloudinary URLs in the HTML
+                        let html = renderedElement.outerHTML;
+                        html = html.replace(/url\(&quot;data:[^&]*&quot;\)/g, 'url(&quot;&quot;)');
+                        html = html.replace(/url\("data:[^"]*"\)/g, 'url("")');
+                        html = html.replace(/src="data:[^"]*"/g, 'src=""');
+
                         slidesWithHtml.push({
                           audioUrl: slide.audioUrl,
                           backgroundVideoUrl: cloudinaryVideoUrl,
@@ -1506,7 +1513,7 @@ export function PreviewExport({
                           talkingHeadY: thY,
                           transition: slide.transition || 'none',
                           transitionDuration: slide.transitionDuration || 0.5,
-                          htmlContent: renderedElement.outerHTML
+                          htmlContent: html
                         });
                       root.unmount();
                       document.body.removeChild(wrapper);
@@ -1515,15 +1522,14 @@ export function PreviewExport({
                     toast.info('Sending project to VPS...');
 
                     const payload = { slides: slidesWithHtml, projectName };
-                    console.log('VPS Payload with Cloudinary URLs:', JSON.stringify(payload, (key, value) => {
-                      if (key === 'htmlContent') return value.substring(0, 50) + '...';
-                      return value;
-                    }, 2));
+                    const jsonPayload = JSON.stringify(payload);
+                    const payloadSizeMB = (jsonPayload.length / (1024 * 1024)).toFixed(2);
+                    console.log(`VPS Payload: ${payloadSizeMB} MB for ${slidesWithHtml.length} slides`);
 
                     const startRes = await fetch(`/api/vps-render?mode=render`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(payload),
+                      body: jsonPayload,
                     });
 
                     if (!startRes.ok) throw new Error(await startRes.text());
@@ -1586,10 +1592,10 @@ export function PreviewExport({
 
                     for (let i = 0; i < slides.length; i++) {
                       const slide = slides[i];
-                      
-                      // Upload background video to Cloudinary if it exists
+
+                      // Upload background video to Cloudinary if it exists and isn't already on Cloudinary
                       let cloudinaryVideoUrl = slide.backgroundVideoUrl;
-                      if (slide.backgroundVideoUrl) {
+                      if (slide.backgroundVideoUrl && !slide.backgroundVideoUrl.includes('cloudinary.com')) {
                         try {
                           toast.info(`Uploading background video ${i + 1}/${slides.length} to Cloudinary...`);
                           const videoResponse = await fetch(slide.backgroundVideoUrl);
@@ -1676,6 +1682,12 @@ export function PreviewExport({
                         console.log(`TH position for slide ${i} (ZIP): x=${thX}, y=${thY}, size=${thSize}`);
                       }
 
+                        // Strip base64 data URIs from rendered HTML to reduce payload size
+                        let html = renderedElement.outerHTML;
+                        html = html.replace(/url\(&quot;data:[^&]*&quot;\)/g, 'url(&quot;&quot;)');
+                        html = html.replace(/url\("data:[^"]*"\)/g, 'url("")');
+                        html = html.replace(/src="data:[^"]*"/g, 'src=""');
+
                         slidesWithHtml.push({
                           audioUrl: slide.audioUrl,
                           backgroundVideoUrl: cloudinaryVideoUrl,
@@ -1688,7 +1700,7 @@ export function PreviewExport({
                           talkingHeadY: thY,
                           transition: slide.transition || 'none',
                           transitionDuration: slide.transitionDuration || 0.5,
-                          htmlContent: renderedElement.outerHTML
+                          htmlContent: html
                         });
                       root.unmount();
                       document.body.removeChild(wrapper);

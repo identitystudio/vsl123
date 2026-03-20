@@ -282,6 +282,7 @@ export function SlideEditPanel({
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiStylingWords, setAiStylingWords] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showTransitionSlideSelector, setShowTransitionSlideSelector] = useState(false);
   const [activeTab, setActiveTab] = useState<'text' | 'media' | 'avatar'>('text');
   const localHeadshotRef = useRef<HTMLInputElement>(null);
 
@@ -1619,6 +1620,82 @@ export function SlideEditPanel({
                 />
               </div>
             </div>
+
+            {/* Apply Transition Buttons */}
+            {slide.transition && slide.transition !== 'none' && allSlides.length > 1 && (
+              <div className="mt-3 space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border-gray-200 hover:border-black hover:bg-gray-50 transition-all duration-200"
+                    onClick={() => {
+                      allSlides.forEach((s) => {
+                        if (s.id !== slide.id) {
+                          onAsyncUpdate?.(s.id, {
+                            transition: slide.transition,
+                            transitionDuration: slide.transitionDuration || 0.5,
+                          });
+                        }
+                      });
+                      toast.success(`Applied "${slide.transition}" transition to all ${allSlides.length} slides`);
+                    }}
+                  >
+                    Apply to All Slides
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border-gray-200 hover:border-black hover:bg-gray-50 transition-all duration-200"
+                    onClick={() => setShowTransitionSlideSelector(!showTransitionSlideSelector)}
+                  >
+                    {showTransitionSlideSelector ? 'Close' : 'Apply to Specific'}
+                  </Button>
+                </div>
+
+                {showTransitionSlideSelector && (
+                  <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100 max-h-48 overflow-y-auto space-y-1">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">
+                      Select slides to apply "{slide.transition}" transition
+                    </span>
+                    {allSlides.map((s, idx) => (
+                      <button
+                        key={s.id}
+                        disabled={s.id === slide.id}
+                        className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all duration-150 flex items-center gap-2 ${
+                          s.id === slide.id
+                            ? 'bg-black text-white cursor-default'
+                            : 'hover:bg-gray-100 cursor-pointer border border-transparent hover:border-gray-200'
+                        }`}
+                        onClick={() => {
+                          if (s.id !== slide.id) {
+                            onAsyncUpdate?.(s.id, {
+                              transition: slide.transition,
+                              transitionDuration: slide.transitionDuration || 0.5,
+                            });
+                            toast.success(`Applied "${slide.transition}" to slide ${idx + 1}`);
+                          }
+                        }}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate">
+                          {s.fullScriptText?.slice(0, 40) || `Slide ${idx + 1}`}
+                          {(s.fullScriptText?.length || 0) > 40 ? '...' : ''}
+                        </span>
+                        {s.id === slide.id && (
+                          <span className="ml-auto text-[9px] opacity-70">Current</span>
+                        )}
+                        {s.id !== slide.id && s.transition === slide.transition && (
+                          <Check className="ml-auto w-3 h-3 text-green-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Emotional Context */}
