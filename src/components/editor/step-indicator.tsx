@@ -21,15 +21,15 @@ export function StepIndicator({ currentStep }: StepIndicatorProps) {
           <div
             className={`w-10 h-1.5 rounded-full transition-colors ${
               step < currentStep
-                ? 'bg-black'
+                ? 'bg-emerald-500'
                 : step === currentStep
-                  ? 'bg-black'
+                  ? 'bg-emerald-500 animate-pulse'
                   : 'bg-gray-200'
             }`}
           />
           <span
             className={`text-xs transition-colors ${
-              step <= currentStep ? 'text-gray-700 font-medium' : 'text-gray-400'
+              step <= currentStep ? 'text-emerald-700 font-medium' : 'text-gray-400'
             }`}
           >
             {label}

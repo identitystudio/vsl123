@@ -253,17 +253,23 @@ const createSegmentWithBackgroundVideo = async (slide, idx, framesDir, audioDir,
         const hasThVideo = await fs.pathExists(thVideo) && slide.talkingHeadAsHeadshot;
         const hasAudio = await fs.pathExists(mp3);
 
-        let duration = 3; // Default duration
+        let rawDuration = 3; // Default duration
         if (hasAudio) {
-            duration = await getAudioDuration(mp3);
+            rawDuration = await getAudioDuration(mp3);
         } else if (hasBgVideo) {
-            duration = await getVideoDuration(bgVideo);
+            rawDuration = await getVideoDuration(bgVideo);
         }
 
-        console.log(`Processing segment ${id}: hasBgVideo=${hasBgVideo}, hasThVideo=${hasThVideo}, hasAudio=${hasAudio}, duration=${duration}s`);
+        // Quantize to exact 30fps frame boundary so video and audio have identical duration.
+        // Without this, video (multiples of 33.33ms) and audio (multiples of 21.33ms AAC frames)
+        // have slightly different durations per segment, causing cumulative drift across slides.
+        const duration = Math.ceil(rawDuration * 30) / 30;
 
-        // Force exactly 48kHz stereo to prevent concat stream mismatched errors
-        const audioFilter = `aresample=async=1:osr=48000,aformat=channel_layouts=stereo`;
+        console.log(`Processing segment ${id}: hasBgVideo=${hasBgVideo}, hasThVideo=${hasThVideo}, hasAudio=${hasAudio}, rawDur=${rawDuration}s, quantizedDur=${duration}s`);
+
+        // Force audio to start at t=0 (fixes MP3 encoder delay), resample to 48kHz stereo,
+        // then pad/trim to exact frame-quantized duration so it matches video precisely.
+        const audioFilter = `aresample=async=1:first_pts=0:osr=48000,aformat=channel_layouts=stereo,apad=whole_dur=${duration.toFixed(6)},atrim=0:${duration.toFixed(6)},asetpts=PTS-STARTPTS`;
 
         // Function to build command
         const buildCommand = (includeTh) => {
@@ -344,7 +350,7 @@ const createSegmentWithBackgroundVideo = async (slide, idx, framesDir, audioDir,
                 // Overlay Talking Head on Base
                 filterComplex.push(`[base][th]overlay=${x}:${y}[v]`);
             } else {
-                filterComplex.push(`[base]null[v]`);
+                filterComplex.push(`[base]setpts=PTS-STARTPTS[v]`);
             }
 
             // 4. Audio Mixing
@@ -419,42 +425,20 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
     const hasAnyTransition = slides.some((s, i) => i > 0 && s.transition && s.transition !== 'none');
 
     if (!hasAnyTransition) {
-        // Fall back to simple concat (stream copy)
+        // Concat with re-encode to ensure clean timestamps across segments
         const list = segFiles.map(f => `file '${f}'`).join('\n');
         await fs.writeFile(path.join(segDir, '..', 'list.txt'), list);
-        await runCmd(`cd "${segDir}" && ffmpeg -y -f concat -safe 0 -i ../list.txt -c copy "${finalPath}"`);
+        await runCmd(`cd "${segDir}" && ffmpeg -y -f concat -safe 0 -i ../list.txt -r 30 -vsync cfr -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`);
         return;
     }
 
-    // STRATEGY: PRE-ROLL — add frozen first frame to the START of each incoming segment.
-    // xfade blends the outgoing slide's real ending with the incoming slide's frozen first frame.
-    // When the transition ends, the incoming slide's actual content + audio start at the same moment.
-    // This keeps video and audio perfectly in sync.
-
-    for (let i = 1; i < segFiles.length; i++) {
-        const slide = slides[i];
-        const hasTransition = slide && slide.transition && slide.transition !== 'none';
-        if (!hasTransition) continue;
-
-        const transDur = slide.transitionDuration || 0.5;
-        const segPath = path.join(segDir, segFiles[i]);
-        const prerolledPath = path.join(segDir, `_preroll_${segFiles[i]}`);
-
-        // tpad start_mode=clone prepends frozen copies of the first frame.
-        // Audio is untouched (-c:a copy), so it still starts at its original position.
-        console.log(`Pre-rolling segment ${i} with ${transDur}s frozen first frame for transition...`);
-        await runCmd(`ffmpeg -y -i "${segPath}" -vf "tpad=start_mode=clone:start_duration=${transDur}" -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a copy "${prerolledPath}"`);
-
-        await fs.move(prerolledPath, segPath, { overwrite: true });
-    }
-
-    // Build xfade filter chain
-    // With pre-roll, each incoming segment's video is transDur longer at the start.
-    // xfade offset = cumulative output duration - transDur (transition starts before current end).
-    // After xfade, the output duration grows by the original segment duration (pre-roll is consumed).
+    // Build xfade (video) + acrossfade (audio) filter chains.
+    // Both xfade and acrossfade subtract the transition duration from total output,
+    // keeping video and audio perfectly in sync without any pre-roll hacks.
     const inputs = segFiles.map(f => `-i "${path.join(segDir, f)}"`).join(' ');
     let videoFilter = '';
-    let cumulativeVideoDur = durations[0]; // Running output video duration
+    let audioFilter = '';
+    let cumulativeVideoDur = durations[0];
 
     for (let i = 0; i < segFiles.length - 1; i++) {
         const nextSlide = slides[i + 1];
@@ -462,37 +446,28 @@ const concatWithTransitions = async (segDir, slides, finalPath) => {
             ? nextSlide.transition : null;
         const transDur = (nextSlide && nextSlide.transitionDuration) || 0.5;
 
-        const prevLabel = i === 0 ? `[0:v]` : `[v${i}]`;
-        const nextLabel = `[${i + 1}:v]`;
-        const outLabel = i === segFiles.length - 2 ? `[vout]` : `[v${i + 1}]`;
+        const prevVLabel = i === 0 ? `[0:v]` : `[v${i}]`;
+        const nextVLabel = `[${i + 1}:v]`;
+        const outVLabel = i === segFiles.length - 2 ? `[vout]` : `[v${i + 1}]`;
+
+        const prevALabel = i === 0 ? `[0:a]` : `[a${i}]`;
+        const nextALabel = `[${i + 1}:a]`;
+        const outALabel = i === segFiles.length - 2 ? `[aout]` : `[a${i + 1}]`;
 
         if (transition) {
-            // Transition starts transDur before the current output ends.
-            // The pre-roll frozen frames fill the transition, then actual content begins.
             const offset = Math.max(0, cumulativeVideoDur - transDur);
-            videoFilter += `${prevLabel}${nextLabel}xfade=transition=${transition}:duration=${transDur}:offset=${offset.toFixed(3)}${outLabel};`;
-            // After xfade: output grew by original duration of next segment
-            // (pre-roll transDur was consumed by the overlap)
-            cumulativeVideoDur = offset + transDur + durations[i + 1];
+            videoFilter += `${prevVLabel}${nextVLabel}xfade=transition=${transition}:duration=${transDur}:offset=${offset.toFixed(3)}${outVLabel};`;
+            audioFilter += `${prevALabel}${nextALabel}acrossfade=d=${transDur}:c1=tri:c2=tri${outALabel};`;
+            cumulativeVideoDur = cumulativeVideoDur + durations[i + 1] - transDur;
         } else {
-            // Hard cut — no pre-roll was added, just place next segment after current
             const offset = cumulativeVideoDur;
-            videoFilter += `${prevLabel}${nextLabel}xfade=transition=fade:duration=0.001:offset=${offset.toFixed(3)}${outLabel};`;
+            videoFilter += `${prevVLabel}${nextVLabel}xfade=transition=fade:duration=0.01:offset=${offset.toFixed(3)}${outVLabel};`;
+            audioFilter += `${prevALabel}${nextALabel}acrossfade=d=0.01:c1=tri:c2=tri${outALabel};`;
             cumulativeVideoDur = offset + durations[i + 1];
         }
     }
 
-    videoFilter = videoFilter.replace(/;$/, '');
-
-    // Audio: simple sequential concat — each slide's voiceover plays fully, no overlap.
-    // Total audio = sum(durations) which matches total video from the xfade chain.
-    let audioFilter = '';
-    for (let i = 0; i < segFiles.length; i++) {
-        audioFilter += `[${i}:a]`;
-    }
-    audioFilter += `concat=n=${segFiles.length}:v=0:a=1[aout]`;
-
-    const filterComplex = `${videoFilter};${audioFilter}`;
+    const filterComplex = `${videoFilter}${audioFilter}`.replace(/;$/, '');
     const cmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -r 30 -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`;
 
     console.log('Transition concat command:', cmd.substring(0, 500) + '...');

@@ -185,6 +185,8 @@ export function SlideReviewer({
   const holdStartRef = useRef<number>(0);
   const headshotInputRef = useRef<HTMLInputElement>(null);
   const bgImageInputRef = useRef<HTMLInputElement>(null);
+  const overviewStripRef = useRef<HTMLDivElement>(null);
+  const overviewItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const updateSingleSlide = useUpdateSingleSlide();
   const queryClient = useQueryClient();
   const HOLD_DURATION = 1000;
@@ -606,6 +608,25 @@ export function SlideReviewer({
   const [viewingSlidesAnyway, setViewingSlidesAnyway] = useState(false);
   const [forceViewActive, setForceViewActive] = useState(!!forceShowSlides);
 
+  useEffect(() => {
+    if (!editing) return;
+    const activeSlideId = slides[currentIndex]?.id;
+    if (!activeSlideId) return;
+
+    const container = overviewStripRef.current;
+    const activeEl = overviewItemRefs.current[activeSlideId];
+    if (!container || !activeEl) return;
+
+    const elementLeft = activeEl.offsetLeft;
+    const elementRight = elementLeft + activeEl.offsetWidth;
+    const viewportLeft = container.scrollLeft;
+    const viewportRight = viewportLeft + container.clientWidth;
+
+    if (elementLeft < viewportLeft || elementRight > viewportRight) {
+      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [currentIndex, slides, editing]);
+
   // Sync forceShowSlides prop into local state
   useEffect(() => {
     if (forceShowSlides) {
@@ -653,16 +674,18 @@ export function SlideReviewer({
   }
 
   return (
-    <div className={editing && showInfographics ? 'max-w-7xl mx-auto px-4 py-8' : 'max-w-6xl mx-auto px-4 py-8'}>
+    <div className={editing ? 'w-full h-full p-0' : (showInfographics ? 'max-w-7xl mx-auto px-4 py-8' : 'max-w-6xl mx-auto px-4 py-8')}>
       {/* Slide counter */}
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-gray-500">
-          Slide {currentIndex + 1} of {slides.length}
-        </span>
-        <span className="text-sm text-gray-400">
-          {Math.round((reviewedCount / slides.length) * 100)}% reviewed
-        </span>
-      </div>
+      {!editing && (
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm text-gray-500">
+            Slide {currentIndex + 1} of {slides.length}
+          </span>
+          <span className="text-sm text-gray-400">
+            {Math.round((reviewedCount / slides.length) * 100)}% reviewed
+          </span>
+        </div>
+      )}
 
       {/* Hidden file input for background image upload via double-click */}
       <input
@@ -673,34 +696,15 @@ export function SlideReviewer({
         onChange={handleBgImageUpload}
       />
 
-      {/* Slide preview */}
-      <div className="flex justify-center mb-6">
-        <SlidePreview
-          slide={editing && editSlide ? editSlide : currentSlide}
-          onHeadshotClick={
-            editing && editSlide?.headshot
-              ? () => headshotInputRef.current?.click()
-              : undefined
-          }
-          onSplitImageDrag={
-            editing && editSlide && (editSlide.style.background === 'split' || editSlide.backgroundImage?.displayMode === 'split')
-              ? (newPosY) => setEditSlide({
-                  ...editSlide,
-                  backgroundImage: {
-                    ...editSlide.backgroundImage!,
-                    imagePositionY: newPosY,
-                  },
-                })
-              : undefined
-          }
-          onImageDoubleClick={
-            editing && editSlide?.hasBackgroundImage
-              ? () => bgImageInputRef.current?.click()
-              : undefined
-          }
-          onWordClick={handleWordClick}
-        />
-      </div>
+      {/* Slide preview (review mode) */}
+      {!editing && (
+        <div className="flex justify-center mb-6">
+          <SlidePreview
+            slide={currentSlide}
+            onWordClick={handleWordClick}
+          />
+        </div>
+      )}
 
       {/* Action buttons (when not editing) */}
       {!editing && (
@@ -774,49 +778,10 @@ export function SlideReviewer({
         </div>
       )}
 
-      {/* Edit panel + Infographics floating panel */}
+      {/* Edit layout: Canva-style left sidebar + preview workspace */}
       {editing && editSlide && (
-        <div className="flex gap-4 mb-8 items-start">
-          {/* Infographics Panel — floats to the left */}
-          <InfographicsPanel
-            projectId={projectId}
-            open={showInfographics}
-            onClose={() => setShowInfographics(false)}
-            savedImages={savedInfographicImages}
-            savedPrompt={savedInfographicPrompt}
-            savedVideos={savedInfographicVideos}
-            onApplyToSlide={(imageUrl) => {
-              if (editSlide) {
-                setEditSlide({
-                  ...editSlide,
-                  hasBackgroundImage: true,
-                  backgroundImage: {
-                    url: imageUrl,
-                    opacity: 100,
-                    blur: 0,
-                    displayMode: 'crisp',
-                  },
-                  style: {
-                    ...editSlide.style,
-                    background: 'image',
-                  },
-                });
-                toast.success('Image applied to slide');
-              }
-            }}
-            onApplyVideoToSlide={(videoUrl) => {
-              if (editSlide) {
-                setEditSlide({
-                  ...editSlide,
-                  backgroundVideoUrl: videoUrl,
-                });
-                toast.success('Video applied to slide');
-              }
-            }}
-          />
-
-          {/* Main Edit Panel */}
-          <div className="flex-1 min-w-0">
+        <div className="grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] gap-0 h-[calc(100vh-56px)]">
+          <div className="bg-white border-r border-gray-200 h-full overflow-y-auto p-3 xl:p-4">
             {/* Infographics toggle button */}
             {!showInfographics && (
               <button
@@ -827,6 +792,45 @@ export function SlideReviewer({
                 Open Infographics
               </button>
             )}
+
+            {/* Infographics Panel in sidebar */}
+            <InfographicsPanel
+              projectId={projectId}
+              open={showInfographics}
+              onClose={() => setShowInfographics(false)}
+              savedImages={savedInfographicImages}
+              savedPrompt={savedInfographicPrompt}
+              savedVideos={savedInfographicVideos}
+              onApplyToSlide={(imageUrl) => {
+                if (editSlide) {
+                  setEditSlide({
+                    ...editSlide,
+                    hasBackgroundImage: true,
+                    backgroundImage: {
+                      url: imageUrl,
+                      opacity: 100,
+                      blur: 0,
+                      displayMode: 'crisp',
+                    },
+                    style: {
+                      ...editSlide.style,
+                      background: 'image',
+                    },
+                  });
+                  toast.success('Image applied to slide');
+                }
+              }}
+              onApplyVideoToSlide={(videoUrl) => {
+                if (editSlide) {
+                  setEditSlide({
+                    ...editSlide,
+                    backgroundVideoUrl: videoUrl,
+                  });
+                  toast.success('Video applied to slide');
+                }
+              }}
+            />
+
             <SlideEditPanel
               slide={editSlide}
               onUpdate={setEditSlide}
@@ -874,18 +878,19 @@ export function SlideReviewer({
               onTogglePreview={onTogglePreview}
               showPreviewAll={showPreviewAll}
               isSaving={isSaving}
+              showTopActionButtons={false}
               onAsyncUpdate={(slideId, updates) => {
                 setSlides((prevSlides) => {
                   const updated = prevSlides.map((s) => (s.id === slideId ? { ...s, ...updates } : s));
                   syncProjectSlides(updated);
-                  
+
                   const slideToSave = updated.find((s) => s.id === slideId);
                   if (slideToSave) {
                     saveSingleSlide(slideToSave);
                   }
                   return updated;
                 });
-                
+
                 setEditSlide((prevEdit) => {
                   if (prevEdit && prevEdit.id === slideId) {
                     return { ...prevEdit, ...updates };
@@ -894,6 +899,143 @@ export function SlideReviewer({
                 });
               }}
             />
+          </div>
+
+          <div className="h-full bg-gray-200 overflow-auto p-4 xl:p-8">
+            <div className="flex flex-col items-center justify-start gap-4">
+              <SlidePreview
+                slide={editSlide}
+                onHeadshotClick={
+                  editSlide?.headshot
+                    ? () => headshotInputRef.current?.click()
+                    : undefined
+                }
+                onSplitImageDrag={
+                  editSlide && (editSlide.style.background === 'split' || editSlide.backgroundImage?.displayMode === 'split')
+                    ? (newPosY) => setEditSlide({
+                        ...editSlide,
+                        backgroundImage: {
+                          ...editSlide.backgroundImage!,
+                          imagePositionY: newPosY,
+                        },
+                      })
+                    : undefined
+                }
+                onImageDoubleClick={
+                  editSlide?.hasBackgroundImage
+                    ? () => bgImageInputRef.current?.click()
+                    : undefined
+                }
+                onWordClick={handleWordClick}
+              />
+
+              <div className="mt-4 w-full max-w-[980px] bg-white/85 backdrop-blur-sm border border-gray-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-gray-700">Overview</span>
+                  <span className="text-[10px] font-semibold text-gray-400">{slides.length} slides</span>
+                </div>
+                <div ref={overviewStripRef} className="flex gap-3 overflow-x-auto pb-1 thin-scrollbar">
+                  {slides
+                    .filter((s) => !slides.some((ps) => ps.absorbedSlideIds?.includes(s.id)))
+                    .map((s) => {
+                      const originalIndex = slides.findIndex((as) => as.id === s.id);
+                      return (
+                        <button
+                          key={`overview-inline-${s.id}`}
+                          ref={(el) => {
+                            overviewItemRefs.current[s.id] = el;
+                          }}
+                          type="button"
+                          onClick={() => {
+                            if (editSlide) {
+                              const slideToSave = { ...editSlide, reviewed: true };
+                              const updated = [...slides];
+                              updated[currentIndex] = slideToSave;
+                              setSlides(updated);
+                              syncProjectSlides(updated);
+                              saveSingleSlide(slideToSave);
+                            }
+                            setCurrentIndex(originalIndex);
+                            setEditing(true);
+                            setEditSlide({ ...slides[originalIndex] });
+                          }}
+                          className={`relative shrink-0 w-44 aspect-video rounded-lg border overflow-hidden text-left transition-all ${
+                            originalIndex === currentIndex
+                              ? 'ring-2 ring-black border-black shadow-md'
+                              : 'border-gray-300 hover:border-gray-500 hover:shadow-sm'
+                          }`}
+                        >
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              background: s.style.background === 'dark' || s.style.background === 'video' || s.backgroundVideoUrl
+                                ? '#1a1a1a'
+                                : '#ffffff',
+                            }}
+                          />
+                          {s.hasBackgroundImage && s.backgroundImage?.url && (
+                            <div
+                              className="absolute inset-0 bg-cover bg-center"
+                              style={{ backgroundImage: `url(${s.backgroundImage.url})`, opacity: 0.65 }}
+                            />
+                          )}
+                          <div className="absolute inset-0 p-3 flex items-center justify-center">
+                            <p
+                              className="text-xs font-bold text-center line-clamp-3"
+                              style={{ color: s.style.textColor === 'white' ? 'white' : 'black' }}
+                            >
+                              {s.fullScriptText}
+                            </p>
+                          </div>
+                          <span className="absolute top-1.5 left-1.5 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">
+                            {originalIndex + 1}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEditing(false);
+                    setEditSlide(null);
+                  }}
+                  className="gap-1 h-8 text-xs text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={currentIndex === 0}
+                  className="gap-1 h-9 rounded-lg"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleEditSave()}
+                  disabled={isSaving}
+                  className="bg-black text-white hover:bg-gray-800 gap-1.5 h-9 px-5 rounded-lg font-semibold shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  {isSaving ? (
+                    <>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" /> Save &amp; Next &rarr;
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

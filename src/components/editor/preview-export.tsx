@@ -1572,7 +1572,7 @@ export function PreviewExport({
               <Button
                 onClick={handleShotstackExport}
                 size="lg"
-                className="bg-indigo-600 text-white hover:bg-indigo-700 gap-2 text-lg px-8 py-6 w-full shadow-lg shadow-indigo-500/20"
+                className="hidden"
               >
                 <Download className="w-5 h-5" />
                 Export Video (Shotstack)

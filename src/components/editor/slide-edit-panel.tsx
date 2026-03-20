@@ -9,7 +9,6 @@ import {
   Sparkles,
   Loader2,
   Search,
-  BarChart3,
   Check,
   Pencil,
   ChevronLeft,
@@ -65,6 +64,7 @@ interface SlideEditPanelProps {
   showPreviewAll?: boolean;
   isSaving?: boolean;
   onAsyncUpdate?: (slideId: string, updates: Partial<Slide>) => void;
+  showTopActionButtons?: boolean;
 }
 
 const PRESETS: { label: string; value: PresetType }[] = [
@@ -269,6 +269,7 @@ export function SlideEditPanel({
   showPreviewAll = false,
   isSaving = false,
   onAsyncUpdate,
+  showTopActionButtons = true,
 }: SlideEditPanelProps) {
   const nextSlides = allSlides.slice(currentIndex + 1);
   const [editingText, setEditingText] = useState(false);
@@ -1193,28 +1194,19 @@ export function SlideEditPanel({
     <>
 
       {/* Main Editor Card */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 shadow-sm">
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6 space-y-6 shadow-sm">
 
         {/* Save/Cancel + Navigation — top of panel */}
         <div className="pb-4 mb-2 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="bg-black text-white text-[10px] font-bold px-2.5 py-1 rounded-full tabular-nums tracking-wide">
                 {currentIndex + 1} / {totalSlides}
               </span>
               <span className="text-[10px] text-gray-300 font-medium hidden sm:inline">
                 &#x2318;+Enter to save
               </span>
-              <div className="w-px h-4 bg-gray-200 mx-1" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onTogglePreview}
-                className={`gap-1.5 h-7 text-[10px] px-2.5 uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${showPreviewAll ? 'bg-black text-white hover:bg-black/90 shadow-sm' : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300'}`}
-              >
-                <BarChart3 className="w-3 h-3" />
-                {showPreviewAll ? 'Hide Preview' : 'Preview'}
-              </Button>
+              <div className="hidden sm:block w-px h-4 bg-gray-200 mx-1" />
               {onToggleEmotionalBeats && (
                 <Button
                   variant="outline"
@@ -1227,39 +1219,41 @@ export function SlideEditPanel({
                 </Button>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={onCancel} className="gap-1 h-8 text-xs text-gray-400 hover:text-gray-600">
-                <X className="w-3.5 h-3.5" />
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onPrevious}
-                disabled={!canGoPrevious}
-                className="gap-1 h-9 rounded-lg"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Previous
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSaveAndNext}
-                disabled={saving || isSaving}
-                className="bg-black text-white hover:bg-gray-800 gap-1.5 h-9 px-5 rounded-lg font-semibold shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                {(saving || isSaving) ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" /> Save &amp; Next &rarr;
-                  </>
-                )}
-              </Button>
-            </div>
+            {showTopActionButtons && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="ghost" onClick={onCancel} className="gap-1 h-8 text-xs text-gray-400 hover:text-gray-600">
+                  <X className="w-3.5 h-3.5" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onPrevious}
+                  disabled={!canGoPrevious}
+                  className="gap-1 h-9 rounded-lg"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveAndNext}
+                  disabled={saving || isSaving}
+                  className="bg-black text-white hover:bg-gray-800 gap-1.5 h-9 px-5 rounded-lg font-semibold shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  {(saving || isSaving) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" /> Save &amp; Next &rarr;
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1270,7 +1264,7 @@ export function SlideEditPanel({
           <div className="flex p-1 bg-gray-50 rounded-2xl border border-gray-100 w-full mb-2 gap-1">
             <button
               onClick={() => setActiveTab('text')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+              className={`min-w-0 flex-1 flex items-center justify-center gap-1 sm:gap-2 py-2.5 px-1 text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
                 activeTab === 'text'
                   ? 'bg-white text-black shadow-sm border border-gray-200/80'
                   : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
@@ -1281,7 +1275,7 @@ export function SlideEditPanel({
             </button>
             <button
               onClick={() => setActiveTab('media')}
-              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+              className={`relative min-w-0 flex-1 flex items-center justify-center gap-1 sm:gap-2 py-2.5 px-1 text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
                 activeTab === 'media'
                   ? 'bg-white text-black shadow-sm border border-gray-200/80'
                   : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
@@ -1295,7 +1289,7 @@ export function SlideEditPanel({
             </button>
             <button
               onClick={() => setActiveTab('avatar')}
-              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+              className={`relative min-w-0 flex-1 flex items-center justify-center gap-1 sm:gap-2 py-2.5 px-1 text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
                 activeTab === 'avatar'
                   ? 'bg-black text-white shadow-md'
                   : 'text-gray-400 hover:text-black hover:bg-white/50'
@@ -1387,7 +1381,7 @@ export function SlideEditPanel({
           </div>
 
           {/* Word Styling Controls */}
-          <div className="flex items-center gap-2 bg-gray-50/80 rounded-xl p-2.5 border border-gray-100">
+          <div className="flex flex-wrap items-center gap-2 bg-gray-50/80 rounded-xl p-2.5 border border-gray-100">
             <Button
               size="sm"
               className="gap-1.5 bg-gradient-to-r from-gray-900 to-black text-white hover:from-black hover:to-gray-800 rounded-lg shadow-sm transition-all duration-200"
@@ -1401,7 +1395,7 @@ export function SlideEditPanel({
               )}
               AI Style
             </Button>
-            <div className="w-px h-5 bg-gray-200" />
+            <div className="hidden sm:block w-px h-5 bg-gray-200" />
             <Button
               variant="outline"
               size="sm"
@@ -1420,13 +1414,13 @@ export function SlideEditPanel({
               <X className="w-3.5 h-3.5" />
               Clear
             </Button>
-            <div className="w-px h-5 bg-gray-200" />
+            <div className="hidden sm:block w-px h-5 bg-gray-200" />
             {(() => {
               const styledCount = (slide.boldWords?.length || 0) + (slide.underlineWords?.length || 0) + (slide.redWords?.length || 0) + (slide.circleWords?.length || 0);
               return styledCount > 0 ? (
-                <span className="text-[10px] font-bold bg-black text-white px-2 py-0.5 rounded-full">{styledCount} styled</span>
+                <span className="ml-auto text-[10px] font-bold bg-black text-white px-2 py-0.5 rounded-full">{styledCount} styled</span>
               ) : (
-                <span className="text-[10px] text-gray-300 font-medium">No styles applied</span>
+                <span className="ml-auto text-[10px] text-gray-300 font-medium">No styles applied</span>
               );
             })()}
           </div>
@@ -1439,13 +1433,13 @@ export function SlideEditPanel({
             </div>
 
             {/* Quick Presets */}
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-5">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quick Presets</span>
               <Select
                 value={currentPreset}
                 onValueChange={(v) => handlePresetChange(v as PresetType)}
               >
-                <SelectTrigger className="w-48 rounded-lg">
+                <SelectTrigger className="w-full sm:w-48 rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1462,11 +1456,11 @@ export function SlideEditPanel({
             <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-5" />
 
             {/* Background / Text Color / Text Size */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {/* Background */}
               <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Background</span>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {(['white', 'dark', 'image'] as const).map((bg) => (
                     <button
                       key={bg}
@@ -1501,7 +1495,7 @@ export function SlideEditPanel({
               {/* Text Color */}
               <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Text Color</span>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {(['white', 'black'] as const).map((color) => (
                     <button
                       key={color}
@@ -1537,7 +1531,7 @@ export function SlideEditPanel({
                     })
                   }
                 >
-                  <SelectTrigger className="w-24 rounded-lg">
+                  <SelectTrigger className="w-full rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1564,7 +1558,7 @@ export function SlideEditPanel({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">Effect</span>
                 <Select
@@ -1624,7 +1618,7 @@ export function SlideEditPanel({
             {/* Apply Transition Buttons */}
             {slide.transition && slide.transition !== 'none' && allSlides.length > 1 && (
               <div className="mt-3 space-y-2">
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -2140,7 +2134,7 @@ export function SlideEditPanel({
                     localStorage.setItem('vsl123-piapi-key', e.target.value);
                   }}
                   placeholder="Paste Key"
-                  className="h-7 w-24 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded bg-gray-50 text-center"
+                  className="h-7 w-40 sm:w-44 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded bg-gray-50"
                 />
               </div>
             </div>
