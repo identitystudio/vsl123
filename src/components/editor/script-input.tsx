@@ -454,8 +454,6 @@ export function ScriptInput({
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    console.log('%c🚀 AI SLIDE GENERATION STARTED', 'background: #4CAF50; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
-    console.log('━'.repeat(50));
 
     try {
       // Helper to check for cancellation
@@ -489,15 +487,9 @@ export function ScriptInput({
 
       // Log debug info to browser console
       if (splitData.debug) {
-        console.log('%c🔍 AI DEBUG INFO (split-script)', 'background: #FF5722; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
-        console.log('📋 Model Requested:', splitData.debug.modelRequested);
-        console.log('📋 Model Sent:', splitData.debug.modelSent);
-        console.log('📋 Provider:', splitData.debug.provider);
         if (splitData.debug.error) {
-          console.log('%c❌ Error:', 'color: red; font-weight: bold;', splitData.debug.error);
         }
         if (splitData.debug.jsonBodyPreview) {
-          console.log('📋 JSON Body Preview:', splitData.debug.jsonBodyPreview);
         }
       }
 
@@ -538,8 +530,6 @@ export function ScriptInput({
       }
 
       setProgress(35);
-      console.log(`%c🧠 STEP 1 COMPLETE: ${slides.length} slides created`, 'background: #9C27B0; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
-      console.log('🎨 Now requesting AI style decisions...');
 
       checkCancelled();
 
@@ -564,7 +554,6 @@ export function ScriptInput({
       });
 
       if (styleResponse.status === 402) {
-        console.error('⚠️ AI ERROR: Insufficient credits or billing issue detected.');
       }
 
       let styleData: { styles: Array<{
@@ -600,20 +589,12 @@ export function ScriptInput({
         
         // Log debug info to browser console
         if (styleData.debug) {
-          console.log('%c🔍 AI DEBUG INFO (style-slides)', 'background: #FF5722; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
-          console.log('📋 Model Requested:', styleData.debug.modelRequested);
-          console.log('📋 Model Sent:', styleData.debug.modelSent);
-          console.log('📋 Provider:', styleData.debug.provider);
           if (styleData.debug.error) {
-            console.log('%c❌ Error:', 'color: red; font-weight: bold;', styleData.debug.error);
           }
           if (styleData.debug.jsonBodyPreview) {
-            console.log('📋 JSON Body Preview:', styleData.debug.jsonBodyPreview);
           }
         }
         
-        console.log(`%c💎 STEP 2 COMPLETE: ${styleData.styles?.length || 0} style decisions`, 'background: #9C27B0; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
-        console.table(styleData.styles?.slice(0, 5).map(s => ({ slideId: s.slideId.slice(0,8), preset: s.preset, keyword: s.refinedImageKeyword })));
       }
 
       setProgress(50);
@@ -747,7 +728,6 @@ export function ScriptInput({
       styledSlides.forEach(s => {
         if (!s.imageKeyword) {
           s.imageKeyword = generateKeywordFromText(s.fullScriptText);
-          console.log(`[AUTO KEYWORD] Slide "${s.fullScriptText.substring(0, 30)}..." → "${s.imageKeyword}"`);
         }
       });
 
@@ -755,7 +735,6 @@ export function ScriptInput({
         (s) => !s.backgroundImage?.url
       );
 
-      console.log(`%c🖼️ FETCHING IMAGES: ${slidesNeedingImages.length}/${styledSlides.length} slides`, 'background: #FF9800; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
 
       const imageCache = new Map<string, any>();
       const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -771,7 +750,6 @@ export function ScriptInput({
           let imgData = imageCache.get(slide.imageKeyword!);
 
           if (!imgData) {
-            console.log(`🔍 Searching for images: ${slide.imageKeyword}`);
             // Priority 1: Pexels
             if (!pexelsBlocked) {
               // Reduced delay - be more aggressive with requests (max 6 per second)
@@ -785,14 +763,11 @@ export function ScriptInput({
               });
 
               if (imgResponse.status === 429) {
-                console.warn(`⚠️ Pexels rate limit at slide ${i + 1}/${slidesNeedingImages.length}. Switching to Pixabay.`);
                 pexelsBlocked = true;
               } else if (imgResponse.ok) {
                 imgData = await imgResponse.json();
-                console.log(`📷 Pexels API returned ${imgData.photos?.length || 0} photos for: ${slide.imageKeyword}`);
                 imageCache.set(slide.imageKeyword!, imgData);
               } else {
-                console.warn(`⚠️ Pexels API error for "${slide.imageKeyword}": ${imgResponse.status}`);
               }
             }
 
@@ -808,23 +783,18 @@ export function ScriptInput({
 
               if (pixResponse.ok) {
                 imgData = await pixResponse.json();
-                console.log(`🖼️ Pixabay API returned ${imgData.photos?.length || 0} photos for: ${slide.imageKeyword}`);
                 imageCache.set(slide.imageKeyword!, imgData);
               } else if (pixResponse.status === 429 || pixResponse.status === 500) {
-                console.warn(`⚠️ Pixabay API error for "${slide.imageKeyword}": ${pixResponse.status}`);
                 if (pixResponse.status === 429) {
-                  console.warn('⚠️ Pixabay rate limit reached. No more Pixabay images.');
                   pixabayBlocked = true;
                 }
               } else {
-                console.warn(`⚠️ Pixabay API error for "${slide.imageKeyword}": ${pixResponse.status}`);
               }
             }
           }
 
           if (imgData && imgData.photos?.[0]?.url) {
             successCount++;
-            console.log(`✅ Image ${successCount}/${slidesNeedingImages.length}: ${slide.imageKeyword}`);
             const slideIndex = styledSlides.findIndex((s) => s.id === slide.id);
             if (slideIndex !== -1) {
               const s = styledSlides[slideIndex];
@@ -862,10 +832,8 @@ export function ScriptInput({
               }
             }
           } else {
-            console.warn(`⚠️ No image found for slide ${i + 1}: ${slide.imageKeyword}`);
           }
         } catch (err) {
-          console.error(`❌ Error fetching image for slide ${i + 1}: ${slide.imageKeyword}`, err);
           // Continue to next slide instead of breaking
         }
 
@@ -875,7 +843,6 @@ export function ScriptInput({
         setProgress(currentProgress);
       }
       
-      console.log(`%c📸 IMAGE FETCH COMPLETE: ${successCount}/${slidesNeedingImages.length} images`, 'background: #2196F3; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;');
 
 
       await new Promise((r) => setTimeout(r, 600));
@@ -891,10 +858,6 @@ export function ScriptInput({
           `${styledSlides.length} slides styled with ${imageCount} images${infographicCount > 0 ? ` and ${infographicCount} infographics` : ''}. Magic complete!`
         );
       }
-      console.log('━'.repeat(50));
-      console.log(`%c✅ AI GENERATION COMPLETE`, 'background: #4CAF50; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px;');
-      console.log(`📊 Summary: ${styledSlides.length} slides | ${imageCount} images | ${infographicCount} infographics`);
-      console.log('━'.repeat(50));
       await onSlidesGenerated(styledSlides, {
         autoPipeline: true,
         originalScript: script,
@@ -902,12 +865,10 @@ export function ScriptInput({
       });
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message === 'AbortError') {
-        console.log('Generation aborted by user');
         return;
       }
       const msg = err instanceof Error ? err.message : 'Unknown error';
       if (msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('billing')) {
-        console.error('❌ CRITICAL ERROR: Could not use AI because of credit/billing issues.');
       }
       toast.error(`Failed to generate slides: ${msg}`);
       setGenerating(false);

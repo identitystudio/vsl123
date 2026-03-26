@@ -265,8 +265,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
           if (!options?.skipRefetch) {
             refetch();
           }
-        } catch (err) {
-          console.error('Background slide save failed:', err);
+        } catch {
           toast.error('Failed to save slide changes');
 
           // Rollback on error
@@ -359,8 +358,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               });
 
               if (!imageResponse.ok) {
-                const text = await imageResponse.text();
-                console.warn('Beat image generation failed:', text);
+                await imageResponse.text();
                 continue;
               }
 
@@ -372,9 +370,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                   await handleApplyToSlide(beat.imageUrl, 'image', [beat.slideIds[0]], slides, { skipRefetch: true });
                 }
               }
-            } catch (err) {
-              console.warn('Beat image error:', err);
-            }
+            } catch {}
           }
 
           beats = beatsWithImages;
@@ -408,7 +404,6 @@ export function EditorContent({ projectId }: EditorContentProps) {
 
               const videoData = await videoResponse.json().catch(() => ({}));
               if (!videoResponse.ok) {
-                console.warn('Beat video generation failed:', videoData?.error || videoResponse.status);
                 continue;
               }
 
@@ -421,9 +416,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
                 // User requested only the first slide of each beat get the video/image
                 await handleApplyToSlide(videoUrl, 'video', [beat.slideIds[0]], slides, { skipRefetch: true });
               }
-            } catch (err) {
-              console.warn('Beat video error:', err);
-            }
+            } catch {}
           }
 
           setPipelineStage('finishing');
@@ -438,7 +431,6 @@ export function EditorContent({ projectId }: EditorContentProps) {
 
           toast.success('Auto pipeline complete: beats, images, videos applied.');
         } catch (err: any) {
-          console.error('Auto pipeline error details:', err);
           let message = 'Auto pipeline failed';
           
           if (err instanceof Error) {

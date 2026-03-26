@@ -205,7 +205,6 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, de
     
     // If rate limited (429) or server error (5xx), retry
     if ((response.status === 429 || response.status >= 500) && retries > 0) {
-      console.log(`Request failed with ${response.status}. Retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return fetchWithRetry(url, options, retries - 1, delay * 2);
     }
@@ -213,7 +212,6 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, de
     return response;
   } catch (error) {
     if (retries > 0) {
-      console.log(`Network error. Retrying in ${delay}ms...`, error);
       await new Promise(resolve => setTimeout(resolve, delay));
       return fetchWithRetry(url, options, retries - 1, delay * 2);
     }
@@ -399,7 +397,6 @@ export function PreviewExport({
 </html>
         `.trim();
 
-        console.log('Sending HTML to htmlcsstoimage (first 1000 chars):', html.substring(0, 1000));
 
         // Add small delay to avoid rate limiting
         if (i > 0) await new Promise(r => setTimeout(r, 500));
@@ -421,12 +418,10 @@ export function PreviewExport({
 
         if (!response.ok) {
           const error = await response.text();
-          console.error('htmlcsstoimage error:', error);
           throw new Error(`API error: ${error}`);
         }
 
         const result = await response.json();
-        console.log('htmlcsstoimage result:', result);
         
         
         // Download the image
@@ -475,7 +470,6 @@ export function PreviewExport({
 
       toast.success('VSL exported successfully!');
     } catch (err) {
-      console.error('Export error:', err);
       toast.error('Export failed. Please try again.');
     } finally {
       setExporting(false);
@@ -552,8 +546,6 @@ export function PreviewExport({
         setExportProgress(Math.round(((i + 1) / slides.length) * 40));
       }
 
-      console.log('Collected slide image URLs:', slideImageUrls);
-      console.log('Collected slide audio URLs:', slideAudioUrls);
 
       // Create video with json2video using image URLs
       const scenes = slides.map((slide, i) => {
@@ -584,7 +576,6 @@ export function PreviewExport({
         return scene;
       });
 
-      console.log('Creating json2video project with scenes:', JSON.stringify(scenes, null, 2));
 
       // Send directly to json2video API (not through proxy) for debugging
       const json2videoPayload = {
@@ -593,7 +584,6 @@ export function PreviewExport({
         scenes,
       };
 
-      console.log('json2video payload:', JSON.stringify(json2videoPayload, null, 2));
 
       const json2videoResponse = await fetch('https://api.json2video.com/v2/movies', {
         method: 'POST',
@@ -604,11 +594,8 @@ export function PreviewExport({
         body: JSON.stringify(json2videoPayload),
       });
 
-      console.log('json2video response status:', json2videoResponse.status);
-      console.log('json2video response ok:', json2videoResponse.ok);
       
       const responseText = await json2videoResponse.text();
-      console.log('json2video response text:', responseText);
 
       if (!json2videoResponse.ok) {
         let error;
@@ -621,13 +608,11 @@ export function PreviewExport({
       }
       
       const videoProject = JSON.parse(responseText);
-      console.log('json2video project created:', videoProject);
       
       // Extract project ID
       const projectId = videoProject.project || videoProject.id || videoProject.project_id || videoProject.movie_id;
       
       if (!projectId) {
-        console.error('Full response:', videoProject);
         throw new Error('No project ID in response. Check console for full response.');
       }
 
@@ -653,7 +638,6 @@ export function PreviewExport({
         });
         
         const status = await statusResponse.json();
-        console.log('Video status:', status);
         
         if (status.status === 'error' || status.status === 'failed') {
           throw new Error(`Video rendering failed: ${status.error || 'Unknown error'}`);
@@ -679,7 +663,6 @@ export function PreviewExport({
       setExportProgress(100);
       toast.success('Video exported successfully!');
     } catch (error) {
-      console.error('Video export error:', error);
       toast.error(error instanceof Error ? error.message : 'Video export failed');
     } finally {
       setExporting(false);
@@ -741,7 +724,6 @@ export function PreviewExport({
               audio.src = slide.audioUrl!;
             });
           } catch (e) {
-            console.warn('Could not get audio duration', e);
           }
         }
 
@@ -784,7 +766,6 @@ export function PreviewExport({
       }
 
       const renderId = result.renderId;
-      console.log('Shotstack Render ID:', renderId);
 
       setExportProgress(50);
       toast.info('Sending to Shotstack for rendering...');
@@ -812,7 +793,6 @@ export function PreviewExport({
         const statusData = await statusResponse.json();
         const status = statusData.status;
         if (status !== lastStatus) {
-          console.log('Shotstack Status:', status);
           lastStatus = status;
         }
 
@@ -840,7 +820,6 @@ export function PreviewExport({
 
       toast.success('Download started!');
     } catch (error) {
-      console.error('Shotstack export error:', error);
       const message =
         error instanceof Error ? error.message : 'Shotstack export failed. Please try again.';
       toast.error(message);
@@ -952,23 +931,18 @@ export function PreviewExport({
       let hasAudio = false;
       let audioInputs: string[] = [];
       
-      console.log('Processing audio files...');
       for (let i = 0; i < slideAudios.length; i++) {
         if (slideAudios[i]) {
           try {
-            console.log(`Writing audio file ${i}...`);
             await ffmpeg.writeFile(`audio${i}.mp3`, await fetchFile(slideAudios[i]!));
             audioInputs.push(`audio${i}.mp3`);
             hasAudio = true;
-            console.log(`Audio file ${i} written successfully`);
           } catch (err) {
-            console.error(`Failed to write audio ${i}:`, err);
             // Skip this audio file if it fails
           }
         }
       }
 
-      console.log(`Total audio files: ${audioInputs.length}, hasAudio: ${hasAudio}`);
 
       // Create concat file for images
       let concatContent = '';
@@ -986,11 +960,9 @@ export function PreviewExport({
 
       // Enable FFmpeg logging to see progress
       ffmpeg.on('log', ({ message }) => {
-        console.log('FFmpeg:', message);
       });
 
       ffmpeg.on('progress', ({ progress, time }) => {
-        console.log(`FFmpeg progress: ${Math.round(progress * 100)}% (${time}s)`);
         setExportProgress(75 + Math.round(progress * 15));
       });
 
@@ -1001,7 +973,6 @@ export function PreviewExport({
       const videoSegments: string[] = [];
       
       for (let i = 0; i < slideImages.length; i++) {
-        console.log(`Creating segment ${i + 1}/${slideImages.length}...`);
         
         const segmentName = `segment${i}.mp4`;
         const imageName = `slide${i}.png`;
@@ -1054,7 +1025,6 @@ export function PreviewExport({
       }
       await ffmpeg.writeFile('segments_concat.txt', segmentConcatContent);
 
-      console.log('Concatenating video segments...');
       
       // Concatenate all video segments
       await ffmpeg.exec([
@@ -1080,7 +1050,6 @@ export function PreviewExport({
       setExportProgress(100);
       toast.success('Video created with FFmpeg!');
     } catch (error) {
-      console.error('FFmpeg export error:', error);
       toast.error(error instanceof Error ? error.message : 'FFmpeg export failed');
     } finally {
       setExporting(false);
@@ -1189,7 +1158,6 @@ export function PreviewExport({
       toast.success('ZIP exported successfully!');
 
     } catch (error) {
-      console.error('ZIP export error:', error);
       toast.error(error instanceof Error ? error.message : 'ZIP export failed');
     } finally {
       setExporting(false);
@@ -1419,17 +1387,14 @@ export function PreviewExport({
                           });
 
                           if (!uploadRes.ok) {
-                            console.error('Failed to upload background video to Cloudinary');
                             // Keep original URL if upload fails
                           } else {
                             const uploadData = await uploadRes.json();
                             if (uploadData.success && uploadData.url) {
                               cloudinaryVideoUrl = uploadData.url;
-                              console.log('✅ Background video uploaded to Cloudinary:', cloudinaryVideoUrl);
                             }
                           }
                         } catch (err) {
-                          console.warn('Could not upload background video to Cloudinary:', err);
                           // Continue with original URL if upload fails
                         }
                       }
@@ -1491,7 +1456,6 @@ export function PreviewExport({
                             thSize = rect.width;
                           }
                         }
-                        console.log(`TH position for slide ${i}: x=${thX}, y=${thY}, size=${thSize}, position=${pos}`);
                       }
 
                         // Strip base64 data URIs from rendered HTML to reduce payload size
@@ -1524,7 +1488,6 @@ export function PreviewExport({
                     const payload = { slides: slidesWithHtml, projectName };
                     const jsonPayload = JSON.stringify(payload);
                     const payloadSizeMB = (jsonPayload.length / (1024 * 1024)).toFixed(2);
-                    console.log(`VPS Payload: ${payloadSizeMB} MB for ${slidesWithHtml.length} slides`);
 
                     const startRes = await fetch(`/api/vps-render?mode=render`, {
                       method: 'POST',
@@ -1555,7 +1518,6 @@ export function PreviewExport({
                       }
                     }
                   } catch (error) {
-                    console.error(error);
                     toast.error(`VPS Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                   } finally {
                     setExporting(false);
@@ -1611,17 +1573,14 @@ export function PreviewExport({
                           });
 
                           if (!uploadRes.ok) {
-                            console.error('Failed to upload background video to Cloudinary');
                             // Keep original URL if upload fails
                           } else {
                             const uploadData = await uploadRes.json();
                             if (uploadData.success && uploadData.url) {
                               cloudinaryVideoUrl = uploadData.url;
-                              console.log('✅ Background video uploaded to Cloudinary:', cloudinaryVideoUrl);
                             }
                           }
                         } catch (err) {
-                          console.warn('Could not upload background video to Cloudinary:', err);
                           // Continue with original URL if upload fails
                         }
                       }
@@ -1679,7 +1638,6 @@ export function PreviewExport({
                             thSize = rect.width;
                           }
                         }
-                        console.log(`TH position for slide ${i} (ZIP): x=${thX}, y=${thY}, size=${thSize}`);
                       }
 
                         // Strip base64 data URIs from rendered HTML to reduce payload size
@@ -1736,7 +1694,6 @@ export function PreviewExport({
                       }
                     }
                   } catch (error) {
-                    console.error(error);
                     toast.error(`VPS ZIP Export Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                   } finally {
                     setExporting(false);

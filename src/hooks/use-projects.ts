@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { VslProject } from '@/types';
@@ -14,15 +14,19 @@ export function useProjects(initialUserId?: string) {
   const [isAuthLoading, setIsAuthLoading] = useState(!initialUserId);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentId = session?.user?.id ?? null;
-      if (currentId !== userId) setUserId(currentId);
+    if (!initialUserId) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const currentId = session?.user?.id ?? null;
+        setUserId((prev) => (prev !== currentId ? currentId : prev));
+        setIsAuthLoading(false);
+      });
+    } else {
       setIsAuthLoading(false);
-    });
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const newUserId = session?.user?.id ?? null;
-      setUserId(newUserId);
+      setUserId((prev) => (prev !== newUserId ? newUserId : prev));
       setIsAuthLoading(false);
 
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
@@ -33,7 +37,7 @@ export function useProjects(initialUserId?: string) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [queryClient, userId]);
+  }, [initialUserId, queryClient]);
 
   const query = useInfiniteQuery({
     queryKey: ['projects', userId],

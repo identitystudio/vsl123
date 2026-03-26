@@ -435,7 +435,6 @@ export function SlideEditPanel({
       });
       toast.success('Headshot uploaded!', { id: uploadToast });
     } catch (err: any) {
-      console.error('Headshot upload error:', err);
       toast.error(err.message || 'Headshot upload failed. Please check Cloudinary configuration.', { id: uploadToast });
     }
     e.target.value = '';
@@ -468,7 +467,6 @@ export function SlideEditPanel({
       });
       toast.success('Headshot video uploaded!', { id: uploadToast });
     } catch (err: any) {
-      console.error('Headshot video upload error:', err);
       toast.error(err.message || 'Headshot video upload failed. Please check Cloudinary configuration.', { id: uploadToast });
     }
     e.target.value = '';
@@ -507,7 +505,6 @@ export function SlideEditPanel({
       });
       toast.success('Background image uploaded!', { id: uploadToast });
     } catch (err: any) {
-      console.error('Background image upload error:', err);
       toast.error(err.message || 'Background upload failed. Please check Cloudinary configuration.', { id: uploadToast });
     }
     e.target.value = '';
@@ -580,8 +577,7 @@ export function SlideEditPanel({
       } else {
         toast.info('AI chose minimal emphasis for this slide');
       }
-    } catch (error) {
-      console.error('AI word styling error:', error);
+    } catch {
       toast.error('Failed to style words with AI');
     } finally {
       setAiStylingWords(false);
@@ -664,8 +660,7 @@ export function SlideEditPanel({
       } else {
         toast.success('Infographic created!');
       }
-    } catch (error) {
-      console.error('Failed to fetch infographic content:', error);
+    } catch {
       // Keep the basic infographic setup even on error
       toast.error('Could not auto-generate infographic. You can edit manually.');
     }
@@ -942,7 +937,6 @@ export function SlideEditPanel({
           onAsyncUpdate?.(slide.id, { talkingHeadImage: data.url });
           toast.success(`Avatar image uploaded! (${img.naturalWidth}×${img.naturalHeight}px)`, { id: uploadToast });
         } catch (err: any) {
-          console.error('Avatar image upload error:', err);
           toast.error(err.message || 'Avatar upload failed. Please check Cloudinary configuration.', { id: uploadToast });
         }
       };
@@ -991,7 +985,6 @@ export function SlideEditPanel({
       onAsyncUpdate?.(slide.id, updates);
       toast.success('Custom avatar video uploaded!', { id: uploadToast });
     } catch (err: any) {
-      console.error('Avatar video upload error:', err);
       toast.error(err.message || 'Video upload failed. Please check Cloudinary configuration.', { id: uploadToast });
     }
     e.target.value = '';
@@ -1070,7 +1063,6 @@ export function SlideEditPanel({
       // Start polling
       startPolling(data.taskId);
     } catch (error: any) {
-      console.error('Avatar generation error:', error);
       toast.error(error.message || 'Failed to generate avatar');
       setAvatarGenerating(false);
     }
@@ -1099,18 +1091,22 @@ export function SlideEditPanel({
           };
           onUpdate({ ...slide, ...updates });
           onAsyncUpdate?.(slide.id, updates);
-          toast.success('🎉 Talking head video generated!');
+          toast.success('Talking head video generated!');
           stopPolling();
         } else if (data.status === 'failed' || data.error) {
-          toast.error(data.error || 'Avatar generation failed');
+          toast.error(
+            typeof data.error === 'string' && data.error.trim()
+              ? data.error
+              : 'Avatar generation failed',
+            { duration: 8000 }
+          );
           const updates = { talkingHeadTaskId: undefined };
           onUpdate({ ...slide, ...updates });
           onAsyncUpdate?.(slide.id, updates);
           stopPolling();
         }
         // else: still pending/processing — keep polling
-      } catch (err) {
-        console.error('Polling error:', err);
+      } catch {
         // Don't stop polling on network errors — retry next interval
       }
     }, 30000); // Poll every 30 seconds
@@ -1124,59 +1120,6 @@ export function SlideEditPanel({
       avatarTimerRef.current = null;
     }
   };
-
-  // Resume polling if slide has an active taskId (e.g. after page refresh)
-  // Do an immediate status check first to avoid showing "Creating Magic..." for stale tasks
-  useEffect(() => {
-    if (!slide.talkingHeadTaskId || !avatarApiKey || avatarTimerRef.current) return;
-
-    let cancelled = false;
-    const taskId = slide.talkingHeadTaskId;
-
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/talking-head-avatar-status?taskId=${encodeURIComponent(taskId)}&apiKey=${encodeURIComponent(avatarApiKey)}`
-        );
-        const data = await res.json();
-
-        if (cancelled) return;
-
-        if (data.status === 'completed' && data.videoUrl) {
-          const updates = { talkingHeadVideoUrl: data.videoUrl, talkingHeadTaskId: undefined };
-          onUpdate({ ...slide, ...updates });
-          onAsyncUpdate?.(slide.id, updates);
-          toast.success('Talking head video is ready!');
-          return;
-        }
-        if (data.status === 'failed' || data.error) {
-          const updates = { talkingHeadTaskId: undefined };
-          onUpdate({ ...slide, ...updates });
-          onAsyncUpdate?.(slide.id, updates);
-          return;
-        }
-
-        // Still pending — now start polling
-        if (!cancelled) {
-          startPolling(taskId);
-        }
-      } catch {
-        // Network error on initial check — start polling as fallback
-        if (!cancelled) {
-          startPolling(taskId);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (avatarTimerRef.current) {
-        clearInterval(avatarTimerRef.current);
-        avatarTimerRef.current = null;
-      }
-      setAvatarGenerating(false);
-    };
-  }, [slide.talkingHeadTaskId, avatarApiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const words = slide.fullScriptText.split(/\s+/);
   const currentPreset = (() => {
@@ -2109,23 +2052,35 @@ export function SlideEditPanel({
           <div className={activeTab === 'avatar' ? 'block space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
 
           {/* 🗣️ Talking Head Avatar Section (Redesigned) */}
-          <div className="space-y-6 pt-4 border-t-2 border-black">
+          <div className="space-y-5 pt-5 border-t-2 border-black">
             
             {/* Header / Intro */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-black text-white rounded-lg flex items-center justify-center font-bold text-lg">
-                  TH
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm tracking-tight">Talking Head Avatar</h3>
-                  <p className="text-[10px] text-gray-500 font-medium">Create a synchronized video spokesperson</p>
+            <div className="grid gap-4">
+              <div className="rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-white to-gray-50 px-4 py-4 shadow-[0_12px_30px_-24px_rgba(0,0,0,0.45)] sm:px-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-sm font-black tracking-wide text-white shadow-[0_10px_24px_-18px_rgba(0,0,0,0.9)]">
+                    TH
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-black tracking-tight text-black sm:text-[15px]">Talking Head Avatar</h3>
+                      <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                        AI Spokesperson
+                      </span>
+                    </div>
+                    <p className="max-w-xl text-[11px] leading-5 text-gray-600">Build a presenter clip from a face image and voice track, or upload your own finished video.</p>
+                  </div>
                 </div>
               </div>
               
-              {/* API Key Inline (Subtle) */}
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">PiAPI Key</span>
+              {/* API Key */}
+              <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-[0_12px_30px_-24px_rgba(0,0,0,0.45)]">
+                <label className="mb-2 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                  <span>PiAPI Key</span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400">
+                    Required
+                  </span>
+                </label>
                 <Input
                   type="password"
                   value={avatarApiKeyLocal}
@@ -2133,40 +2088,47 @@ export function SlideEditPanel({
                     setAvatarApiKey(e.target.value);
                     localStorage.setItem('vsl123-piapi-key', e.target.value);
                   }}
-                  placeholder="Paste Key"
-                  className="h-7 w-40 sm:w-44 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded bg-gray-50"
+                  placeholder="Paste your PiAPI key"
+                  className="h-10 rounded-2xl border-gray-200 bg-gray-50 px-3 text-[11px] font-mono focus:border-black focus:ring-0"
                 />
+                <p className="mt-2 text-[10px] leading-4 text-gray-400">
+                  Stored locally in your browser for talking-head generation only.
+                </p>
               </div>
             </div>
 
             {/* Main Avatar Creation Area */}
-            <div className="grid grid-cols-[100px_1fr] gap-6">
+            <div className="overflow-hidden rounded-[28px] border border-black/10 bg-gradient-to-br from-[#fcfcfc] via-white to-[#f5f5f5] shadow-[0_24px_60px_-42px_rgba(0,0,0,0.45)]">
+              <div className="grid gap-5 p-4 sm:p-5">
               
               {/* Left: Avatar Face Upload */}
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block text-center">Face</span>
+              <div className="min-w-0 rounded-[24px] border border-gray-200 bg-white/90 p-3 sm:p-4">
+                <div className="mb-3">
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Face</span>
+                  <p className="mt-1 text-[10px] leading-4 text-gray-400">Upload the presenter image used for the generated clip.</p>
+                </div>
                 
                 {slide.talkingHeadImage ? (
-                  <div className="relative group w-full aspect-square">
-                    <div className="w-full h-full rounded-xl border-2 border-black overflow-hidden shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white transition-transform group-hover:-translate-y-0.5 group-hover:-translate-x-0.5 group-hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+                  <div className="group relative mx-auto aspect-square w-full max-w-[180px]">
+                    <div className="h-full w-full overflow-hidden rounded-[22px] border-2 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,0.1)] transition-transform group-hover:-translate-y-0.5 group-hover:-translate-x-0.5 group-hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,0.12)]">
                       <img
                         src={slide.talkingHeadImage}
                         alt="Avatar"
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover"
                       />
                       {/* Overlay Action */}
                       <button
                         onClick={() => avatarImageInputRef.current?.click()}
-                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-1"
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
                       >
                         <Pencil className="w-4 h-4" />
-                        <span className="text-[9px] font-bold uppercase">Change</span>
+                        <span className="text-[9px] font-bold uppercase tracking-[0.2em]">Change</span>
                       </button>
                     </div>
                     
                     <button
                       onClick={handleRemoveAvatar}
-                      className="absolute -top-2 -right-2 bg-white border-2 border-black rounded-full p-1 shadow-sm hover:bg-gray-100 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -right-2 -top-2 z-10 rounded-full border-2 border-black bg-white p-1 shadow-sm opacity-0 transition-opacity hover:bg-gray-100 group-hover:opacity-100"
                       title="Remove"
                     >
                       <X className="w-3 h-3 text-black" />
@@ -2175,25 +2137,28 @@ export function SlideEditPanel({
                 ) : (
                   <button
                     onClick={() => avatarImageInputRef.current?.click()}
-                    className="w-full aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-black hover:bg-gray-50 flex flex-col items-center justify-center gap-2 transition-all group"
+                    className="group mx-auto flex aspect-square w-full max-w-[180px] flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-gray-300 bg-gray-50/70 transition-all hover:border-black hover:bg-white"
                   >
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-colors">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm transition-colors group-hover:bg-black group-hover:text-white">
                       <Upload className="w-4 h-4" />
                     </div>
-                    <span className="text-[9px] font-bold text-gray-400 group-hover:text-black uppercase">Upload</span>
+                    <div className="space-y-1 text-center">
+                      <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 group-hover:text-black">Upload Face</span>
+                      <span className="block text-[10px] text-gray-400">PNG or JPG recommended</span>
+                    </div>
                   </button>
                 )}
               </div>
 
               {/* Right: Configuration */}
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4">
                 
                 {/* Inputs Group */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-black uppercase tracking-wider mb-1.5 flex justify-between">
+                <div className="space-y-4">
+                  <div className="rounded-[24px] border border-gray-200 bg-white p-4 shadow-[0_12px_30px_-28px_rgba(0,0,0,0.45)]">
+                    <label className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-black">
                       <span>Script / Prompt</span>
-                      <span className="text-gray-400 font-normal normal-case">Describe how they speak</span>
+                      <span className="text-[10px] font-medium normal-case tracking-normal text-gray-400">Describe how they should speak on camera.</span>
                     </label>
                     <Input
                       value={avatarPrompt}
@@ -2204,14 +2169,14 @@ export function SlideEditPanel({
                         }
                       }}
                       placeholder="e.g. Speaks with confidence and energy..."
-                      className="h-9 text-xs border-gray-300 focus:border-black focus:ring-1 focus:ring-black rounded-lg"
+                      className="h-10 rounded-2xl border-gray-300 text-xs focus:border-black focus:ring-1 focus:ring-black"
                     />
                   </div>
                   
-                  <div>
-                    <label className="text-[10px] font-bold text-black uppercase tracking-wider mb-1.5 flex justify-between">
+                  <div className="rounded-[24px] border border-gray-200 bg-white p-4 shadow-[0_12px_30px_-28px_rgba(0,0,0,0.45)]">
+                    <label className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-black">
                       <span>Audio Source</span>
-                      {slide.audioUrl && <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-bold">AUTO-LINKED</span>}
+                      {slide.audioUrl && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-gray-500">Auto-linked</span>}
                     </label>
                     <div className="relative">
                       <Input
@@ -2223,38 +2188,41 @@ export function SlideEditPanel({
                           }
                         }}
                         placeholder="https://... (Audio URL)"
-                        className="h-9 text-xs border-gray-300 focus:border-black focus:ring-1 focus:ring-black rounded-lg pr-8 font-mono"
+                        className="h-10 rounded-2xl border-gray-300 pr-8 font-mono text-xs focus:border-black focus:ring-1 focus:ring-black"
                       />
                       {avatarAudioUrl && (
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Audio linked" />
+                        <div className="absolute right-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-green-500 animate-pulse" title="Audio linked" />
                       )}
                     </div>
+                    <p className="mt-2 text-[10px] leading-4 text-gray-400">
+                      Use the slide audio URL or generate a fresh voice track below.
+                    </p>
                   </div>
 
                   {/* ElevenLabs Voice Generation */}
-                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-3 rounded-[24px] border border-gray-200 bg-white p-4 shadow-[0_12px_30px_-28px_rgba(0,0,0,0.45)]">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Mic className="w-3.5 h-3.5 text-gray-500" />
-                      <span className="text-[10px] font-bold text-black uppercase tracking-wider">Generate Voice</span>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-black">Generate Voice</span>
                       {elConnected && (
-                        <span className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Connected</span>
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-green-700">Connected</span>
                       )}
                     </div>
 
                     {/* API Key + Connect */}
-                    <div className="flex gap-2">
+                    <div className="grid gap-2">
                       <Input
                         type="password"
                         value={elApiKey}
                         onChange={(e) => setElApiKey(e.target.value)}
                         placeholder="ElevenLabs API Key"
-                        className="h-8 text-[10px] font-mono border-gray-200 focus:border-black focus:ring-0 rounded-lg flex-1"
+                        className="h-9 rounded-2xl border-gray-200 font-mono text-[10px] focus:border-black focus:ring-0"
                       />
                       <Button
                         size="sm"
                         variant={elConnected ? 'outline' : 'default'}
                         onClick={handleElConnect}
-                        className={`h-8 text-[10px] font-bold uppercase tracking-wider rounded-lg px-3 ${elConnected ? 'border-green-300 text-green-700' : 'bg-black text-white hover:bg-gray-800'}`}
+                        className={`h-9 w-full rounded-2xl px-4 text-[10px] font-bold uppercase tracking-[0.2em] ${elConnected ? 'border-green-300 text-green-700' : 'bg-black text-white hover:bg-gray-800'}`}
                       >
                         {elConnected ? <Check className="w-3 h-3" /> : 'Connect'}
                       </Button>
@@ -2262,20 +2230,20 @@ export function SlideEditPanel({
 
                     {/* Voice Selection */}
                     {elConnected && elVoices.length > 0 && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {/* Search Input */}
                         <div className="relative">
-                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                          <Search className="absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
                           <Input
                             value={elVoiceSearch}
                             onChange={(e) => setElVoiceSearch(e.target.value)}
                             placeholder="Search voices..."
-                            className="h-8 text-[10px] border-gray-200 focus:border-black focus:ring-0 rounded-lg pl-7"
+                            className="h-9 rounded-2xl border-gray-200 pl-8 text-[10px] focus:border-black focus:ring-0"
                           />
                         </div>
 
                         {/* Voice List */}
-                        <div className="max-h-[160px] overflow-y-auto rounded-lg border border-gray-200 bg-white divide-y divide-gray-50">
+                        <div className="max-h-[176px] overflow-y-auto rounded-2xl border border-gray-200 bg-gray-50/70 divide-y divide-gray-100">
                           {elVoices
                             .filter((v) => {
                               if (!elVoiceSearch.trim()) return true;
@@ -2318,7 +2286,7 @@ export function SlideEditPanel({
                           size="sm"
                           onClick={handleGenerateVoice}
                           disabled={!elVoiceId || elGenerating}
-                          className="w-full h-9 bg-gradient-to-r from-gray-900 to-black text-white hover:from-black hover:to-gray-800 rounded-lg font-bold text-[10px] uppercase tracking-wider gap-2 disabled:opacity-50"
+                          className="h-10 w-full rounded-2xl bg-gradient-to-r from-gray-900 to-black text-[10px] font-bold uppercase tracking-[0.2em] text-white gap-2 hover:from-black hover:to-gray-800 disabled:opacity-50"
                         >
                           {elGenerating ? (
                             <>
@@ -2337,65 +2305,74 @@ export function SlideEditPanel({
 
                     {/* Audio Preview */}
                     {avatarAudioUrl && (
-                      <audio src={avatarAudioUrl} controls className="w-full h-8 mt-1" />
+                      <audio src={avatarAudioUrl} controls className="mt-1 h-9 w-full" />
                     )}
                   </div>
                 </div>
 
                 {/* Generate Action */}
-                <div className="pt-1">
-                  <Button
-                    onClick={handleGenerateAvatar}
-                    disabled={!slide.talkingHeadImage || avatarGenerating || !avatarApiKeyLocal.trim()}
-                    className="w-full h-11 bg-black text-white hover:bg-gray-800 border-2 border-black shadow-[4px_4px_0px_0px_rgba(200,200,200,1)] hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(200,200,200,1)] hover:bg-black transition-all rounded-lg font-bold uppercase tracking-wider disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
-                  >
-                    {avatarGenerating ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Creating Magic... {avatarElapsed > 0 && `(${avatarElapsed}s)`}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4" />
-                        <span>Generate Video</span>
-                      </div>
-                    )}
-                  </Button>
-                  {!slide.talkingHeadImage && (
-                    <p className="text-[10px] text-center text-gray-400 mt-2 font-medium">
-                      Upload a face image first to enable generation
-                    </p>
-                  )}
+                <div className="rounded-[24px] border border-black bg-black p-3 text-white shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]">
+                  <div className="flex flex-col gap-3">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Ready to render</p>
+                      <p className="text-xs text-white/80">
+                        {slide.talkingHeadImage ? 'Your face image is set. Generate the talking-head video when the prompt and audio are ready.' : 'Upload a face image first to enable talking-head generation.'}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleGenerateAvatar}
+                      disabled={!slide.talkingHeadImage || avatarGenerating || !avatarApiKeyLocal.trim()}
+                      className="h-11 w-full rounded-2xl border border-white/15 bg-white px-5 font-bold uppercase tracking-[0.18em] text-black shadow-none transition-all hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      {avatarGenerating ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Creating... {avatarElapsed > 0 && `(${avatarElapsed}s)`}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4" />
+                          <span>Generate Video</span>
+                        </div>
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
+              </div>
               </div>
             </div>
 
 
             {/* Separator */}
-            <div className="relative py-2">
+            <div className="relative py-1">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-gray-400 font-bold tracking-widest">OR</span>
+                <span className="bg-white px-3 text-[10px] font-bold tracking-[0.3em] text-gray-400">OR USE A CUSTOM VIDEO</span>
               </div>
             </div>
 
 
             {/* Custom Video / Result Area */}
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
-                  <Video className="w-3.5 h-3.5" />
-                  Video Output
-                </h4>
+            <div className="rounded-[28px] border border-gray-200 bg-gradient-to-br from-white via-gray-50/60 to-white p-4 shadow-[0_20px_50px_-34px_rgba(0,0,0,0.45)]">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                    <Video className="w-3.5 h-3.5" />
+                    Video Output
+                  </h4>
+                  <p className="mt-1 text-[10px] leading-4 text-gray-400">
+                    Preview the generated spokesperson video or drop in your own finished clip.
+                  </p>
+                </div>
                 
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => avatarVideoInputRef.current?.click()}
-                  className="h-7 text-[10px] font-bold border-gray-300 hover:border-black hover:bg-white uppercase tracking-wider"
+                  className="h-9 rounded-2xl border-gray-300 px-4 text-[10px] font-bold uppercase tracking-[0.2em] hover:border-black hover:bg-white"
                 >
                   Upload Custom Video
                 </Button>
@@ -2404,23 +2381,23 @@ export function SlideEditPanel({
               {slide.talkingHeadVideoUrl ? (
                 <div className="space-y-4">
                   {/* Video Player */}
-                  <div className="relative rounded-lg overflow-hidden border-2 border-black shadow-md bg-black">
+                  <div className="relative overflow-hidden rounded-[24px] border-2 border-black bg-black shadow-[0_18px_40px_-30px_rgba(0,0,0,0.6)]">
                     <video
                       src={slide.talkingHeadVideoUrl}
                       controls
-                      className="w-full max-h-[240px]" 
+                      className="w-full max-h-[280px]" 
                     />
                     {slide.talkingHeadTaskId && (
-                      <div className="absolute top-2 right-2 bg-black text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm border border-white/20 uppercase tracking-wider">
+                      <div className="absolute right-3 top-3 rounded-full border border-white/20 bg-black/90 px-3 py-1 text-[9px] font-bold uppercase tracking-[0.2em] text-white shadow-sm">
                         AI Generated
                       </div>
                     )}
                   </div>
 
                   {/* Display Options */}
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    <label className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-black transition-colors">
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${slide.talkingHeadAsHeadshot ? 'border-black bg-black' : 'border-gray-300'}`}>
+                  <div className="grid gap-3 pt-1 md:grid-cols-2">
+                    <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 transition-colors hover:border-black">
+                      <div className={`flex h-4 w-4 items-center justify-center rounded-full border ${slide.talkingHeadAsHeadshot ? 'border-black bg-black' : 'border-gray-300'}`}>
                         {slide.talkingHeadAsHeadshot && <Check className="w-2.5 h-2.5 text-white" />}
                       </div>
                       <input
@@ -2429,11 +2406,15 @@ export function SlideEditPanel({
                         checked={!!slide.talkingHeadAsHeadshot}
                         onChange={(e) => onUpdate({ ...slide, talkingHeadAsHeadshot: e.target.checked })}
                       />
-                      <span className="text-xs font-bold text-gray-700">Floating Headshot</span>
+                      <div className="space-y-1">
+                        <span className="block text-xs font-bold text-gray-700">Floating Headshot</span>
+                        <span className="block text-[10px] text-gray-400">Place the speaker as an overlay instead of inline video.</span>
+                      </div>
                     </label>
 
                     {slide.talkingHeadAsHeadshot && (
-                      <div className="space-y-2">
+                      <div className="rounded-2xl border border-gray-200 bg-white p-3">
+                        <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Position</span>
                          <Select
                           value={slide.talkingHeadPosition || 'bottom-right'}
                           onValueChange={(val: any) =>
@@ -2443,7 +2424,7 @@ export function SlideEditPanel({
                             })
                           }
                         >
-                          <SelectTrigger className="h-9 text-xs font-bold border-gray-200">
+                          <SelectTrigger className="h-10 border-gray-200 text-xs font-bold">
                             <SelectValue placeholder="Position" />
                           </SelectTrigger>
                           <SelectContent>
@@ -2462,7 +2443,7 @@ export function SlideEditPanel({
                   {/* Size Slider (if floating) */}
                   {slide.talkingHeadAsHeadshot && (
                     <div className="space-y-2 pt-1">
-                      <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
                         <span>Size</span>
                         <span>{slide.talkingHeadSize || 160}px</span>
                       </div>
@@ -2485,9 +2466,9 @@ export function SlideEditPanel({
                   {/* Border Color */}
                   {slide.talkingHeadAsHeadshot && (
                     <div className="pt-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Frame Color</span>
-                        <span className="text-[10px] text-gray-400 font-mono">{slide.talkingHeadBorderColor || '#818cf8'}</span>
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">Frame Color</span>
+                        <span className="text-[10px] font-mono text-gray-400">{slide.talkingHeadBorderColor || '#818cf8'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {['#818cf8', '#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#14b8a6', 'transparent'].map((color) => (
@@ -2504,15 +2485,15 @@ export function SlideEditPanel({
                             title={color === 'transparent' ? 'No border' : color}
                           />
                         ))}
-                        <div className="w-px h-5 bg-gray-200 mx-1" />
+                        <div className="mx-1 h-5 w-px bg-gray-200" />
                         <label className="relative cursor-pointer" title="Custom color">
                           <input
                             type="color"
                             value={slide.talkingHeadBorderColor || '#818cf8'}
                             onChange={(e) => onUpdate({ ...slide, talkingHeadBorderColor: e.target.value })}
-                            className="absolute inset-0 w-6 h-6 opacity-0 cursor-pointer"
+                            className="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
                           />
-                          <div className="w-6 h-6 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-black transition-colors">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-dashed border-gray-300 transition-colors hover:border-black">
                             <Pencil className="w-2.5 h-2.5 text-gray-400" />
                           </div>
                         </label>
@@ -2524,10 +2505,15 @@ export function SlideEditPanel({
               ) : (
                 <div 
                   onClick={() => avatarVideoInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-200 rounded-lg h-32 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-black hover:bg-white transition-all group"
+                  className="group flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-[24px] border-2 border-dashed border-gray-200 bg-white/80 transition-all hover:border-black hover:bg-white"
                 >
-                  <Video className="w-6 h-6 text-gray-300 group-hover:text-black transition-colors" />
-                  <p className="text-xs font-medium text-gray-400 group-hover:text-black">No video yet</p>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 transition-colors group-hover:bg-black group-hover:text-white">
+                    <Video className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-xs font-bold text-gray-500 transition-colors group-hover:text-black">No video yet</p>
+                    <p className="text-[10px] text-gray-400">Upload a custom result or generate one above.</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -2579,3 +2565,4 @@ export function SlideEditPanel({
     </>
   );
 }
+

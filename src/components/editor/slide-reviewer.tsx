@@ -169,14 +169,9 @@ export function SlideReviewer({
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    console.log('[STATE] editing changed to:', editing);
     onEditingChange?.(editing);
   }, [editing, onEditingChange]);
   const [editSlide, setEditSlide] = useState<Slide | null>(null);
-  
-  useEffect(() => {
-    console.log('[STATE] editSlide changed to:', editSlide ? `slide ${editSlide.id}` : 'null');
-  }, [editSlide]);
   const [skipToValue, setSkipToValue] = useState('');
   const [holdProgress, setHoldProgress] = useState(0);
   const [applyToAllActive, setApplyToAllActive] = useState(false);
@@ -258,14 +253,11 @@ export function SlideReviewer({
   // NOTE: Don't include 'slides' in deps - it causes re-opening when slides update
   // Use slidesRef to get current slides without triggering effect
   useEffect(() => {
-    console.log('[EFFECT] autoEdit effect triggered', { autoEdit, currentIndex });
     if (autoEdit) {
       if (preventAutoEditRef.current) {
-        console.log('[EFFECT] Skipping autoEdit because user manually navigated away');
         preventAutoEditRef.current = false;
         return;
       }
-      console.log('[EFFECT] Re-opening editor due to autoEdit=true');
       setEditing(true);
       setEditSlide({ ...slidesRef.current[currentIndex] });
     }
@@ -421,13 +413,6 @@ export function SlideReviewer({
       
       // Check if this is the last slide BEFORE filtering
       const isLastSlide = currentIndex >= slides.length - 1;
-      console.log('[SAVE & NEXT] Checking last slide:', {
-        currentIndex,
-        slidesLength: slides.length,
-        isLastSlide,
-        counter: `${currentIndex + 1}/${slides.length}`
-      });
-      
       // Filter out any slides that were absorbed into this one
       const absorbedIds = new Set(editSlide.absorbedSlideIds || []);
       let updated = slides.map((s, i) => (i === currentIndex ? slideToSave : s));
@@ -444,14 +429,12 @@ export function SlideReviewer({
 
       // Move to next slide and keep editing, or close if done
       if (!isLastSlide && currentIndex < updated.length - 1) {
-        console.log('[SAVE & NEXT] Moving to next slide');
         const nextIndex = currentIndex + 1;
         setCurrentIndex(nextIndex);
         setEditing(true);
         setEditSlide({ ...updated[nextIndex] });
       } else {
         // Last slide - close editor (same as clicking Cancel)
-        console.log('[SAVE & NEXT] Last slide detected - closing editor');
         setEditing(false);
         setEditSlide(null);
       }
@@ -576,7 +559,6 @@ export function SlideReviewer({
       });
       toast.success('Image uploaded!', { id: uploadToast });
     } catch (err: any) {
-      console.error('Background image upload error:', err);
       toast.error(err.message || 'Background upload failed. Please check Cloudinary configuration.', { id: uploadToast });
     }
     e.target.value = '';
@@ -968,21 +950,51 @@ export function SlideReviewer({
                           <div
                             className="absolute inset-0"
                             style={{
-                              background: s.style.background === 'dark' || s.style.background === 'video' || s.backgroundVideoUrl
-                                ? '#1a1a1a'
-                                : '#ffffff',
+                              background:
+                                s.style.background === 'gradient' && s.style.gradient
+                                  ? s.style.gradient
+                                  : s.style.background === 'dark'
+                                    ? '#1a1a1a'
+                                    : '#ffffff',
                             }}
                           />
-                          {s.hasBackgroundImage && s.backgroundImage?.url && (
+                          {!s.backgroundVideoUrl && s.backgroundImage?.url && (
                             <div
                               className="absolute inset-0 bg-cover bg-center"
-                              style={{ backgroundImage: `url(${s.backgroundImage.url})`, opacity: 0.65 }}
+                              style={{
+                                backgroundImage: `url(${s.backgroundImage.url})`,
+                                backgroundPosition: `center ${s.backgroundImage.imagePositionY ?? 50}%`,
+                                opacity: s.style.background === 'split' ? 1 : 0.72,
+                              }}
                             />
                           )}
+                          {s.backgroundVideoUrl && (
+                            <video
+                              className="absolute inset-0 w-full h-full object-cover"
+                              src={s.backgroundVideoUrl}
+                              autoPlay
+                              loop
+                              muted
+                              playsInline
+                              preload="metadata"
+                            />
+                          )}
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              backgroundColor:
+                                s.style.textColor === 'white'
+                                  ? 'rgba(0,0,0,0.28)'
+                                  : 'rgba(255,255,255,0.16)',
+                            }}
+                          />
                           <div className="absolute inset-0 p-3 flex items-center justify-center">
                             <p
                               className="text-xs font-bold text-center line-clamp-3"
-                              style={{ color: s.style.textColor === 'white' ? 'white' : 'black' }}
+                              style={{
+                                color: s.style.textColor === 'white' ? 'white' : 'black',
+                                textShadow: s.style.textColor === 'white' ? '0 1px 4px rgba(0,0,0,0.45)' : 'none',
+                              }}
                             >
                               {s.fullScriptText}
                             </p>
@@ -1043,3 +1055,6 @@ export function SlideReviewer({
     </div>
   );
 }
+
+
+

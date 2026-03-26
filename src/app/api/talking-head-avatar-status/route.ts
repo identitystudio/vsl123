@@ -2,18 +2,20 @@ import crypto from 'crypto';
 
 const PIAPI_BASE = 'https://api.piapi.ai/api/v1/task';
 
-// Cache completed task results to avoid re-uploading the same video
 const completedTasks = new Map<string, string>();
-// Track in-flight uploads to prevent parallel uploads for the same taskId
 const pendingUploads = new Map<string, Promise<string | null>>();
 
-/**
- * GET /api/talking-head-avatar-status?taskId=xxx&apiKey=xxx
- * 
- * Polls PiAPI for the status of a Kling Avatar task.
- * Returns the current status and video URL when completed.
- * Each call takes <2 seconds — no Vercel timeout issues.
- */
+function getPiApiFailureMessage(error: { code?: number; message?: string; raw_message?: string } | null | undefined): string {
+  if (!error) return 'Avatar generation failed';
+
+  const rawMessage = error.raw_message || '';
+  if (error.code === 10000 && rawMessage.includes('404 Not Found')) {
+    return 'Kling deleted the task after submission. This usually means the provider rejected the image, audio, or prompt. Try a safer prompt or different media and generate again.';
+  }
+
+  return error.message || rawMessage || 'Avatar generation failed';
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -21,22 +23,19 @@ export async function GET(req: Request) {
     const apiKey = searchParams.get('apiKey');
 
     if (!taskId || !apiKey) {
-      return Response.json(
-        { error: "Missing taskId or apiKey" },
-        { status: 400 }
-      );
+      return Response.json({ error: 'Missing taskId or apiKey' }, { status: 400 });
     }
 
     const response = await fetch(`${PIAPI_BASE}/${taskId}`, {
-      method: "GET",
+      method: 'GET',
       headers: {
-        "x-api-key": apiKey,
+        'x-api-key': apiKey,
       },
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("❌ PiAPI status check failed:", response.status, text);
+      console.error('PiAPI status check failed:', response.status, text);
       return Response.json(
         { error: `Status check failed: ${response.statusText}` },
         { status: response.status }
@@ -47,35 +46,31 @@ export async function GET(req: Request) {
     const data = result.data;
 
     if (!data) {
-      return Response.json(
-        { error: "Invalid response from PiAPI" },
-        { status: 500 }
-      );
+      return Response.json({ error: 'Invalid response from PiAPI' }, { status: 500 });
     }
 
-    // Check for actual errors (code > 0 means real failure)
-    if (data.error?.code && data.error.code > 0 && data.error.message) {
-      console.error("❌ PiAPI task error:", data.error);
+    if (data.error?.code && data.error.code > 0) {
+      console.error('PiAPI task error:', data.error);
       return Response.json({
-        status: "failed",
-        error: data.error.message,
+        status: 'failed',
+        error: getPiApiFailureMessage(data.error),
+        providerError: data.error,
         taskId,
       });
     }
 
-    // Check for explicitly failed status
-    if (data.status === "failed" || data.status === "error") {
-      const errorMsg = data.error?.message || data.detail || "Avatar generation failed";
-      console.error("❌ Task failed with status:", data.status, errorMsg);
+    if (data.status === 'failed' || data.status === 'error') {
+      const errorMsg = getPiApiFailureMessage(data.error) || data.detail || 'Avatar generation failed';
+      console.error('Task failed with status:', data.status, errorMsg);
       return Response.json({
-        status: "failed",
+        status: 'failed',
         error: errorMsg,
+        providerError: data.error || null,
         taskId,
       });
     }
 
-    // Still processing
-    if (data.status === "pending" || data.status === "processing") {
+    if (data.status === 'pending' || data.status === 'processing') {
       return Response.json({
         status: data.status,
         taskId,
@@ -83,42 +78,38 @@ export async function GET(req: Request) {
       });
     }
 
-    // Completed — extract video URL
-    if (data.status === "completed") {
-      // Priority: video_url > works[].video.resource_without_watermark > works[].video.resource > output.video
-      let videoUrl = data.output?.video_url || "";
+    if (data.status === 'completed') {
+      let videoUrl = data.output?.video_url || '';
 
       if (!videoUrl && Array.isArray(data.output?.works) && data.output.works.length > 0) {
         videoUrl =
           data.output.works[0].video?.resource_without_watermark ||
           data.output.works[0].video?.resource ||
-          "";
+          '';
       }
 
       if (!videoUrl) {
-        videoUrl = data.output?.video || "";
+        videoUrl = data.output?.video || '';
       }
 
       if (!videoUrl) {
         return Response.json({
-          status: "failed",
-          error: "Generation completed but no video URL found.",
+          status: 'failed',
+          error: 'Generation completed but no video URL found.',
           taskId,
         });
       }
 
-      // Return cached result if already uploaded
       const cached = completedTasks.get(taskId);
       if (cached) {
         return Response.json({
-          status: "completed",
+          status: 'completed',
           videoUrl: cached,
           taskId,
           success: true,
         });
       }
 
-      // Deduplicate in-flight uploads for the same taskId
       let uploadPromise = pendingUploads.get(taskId);
       if (!uploadPromise) {
         uploadPromise = persistVideoToCloudinary(videoUrl);
@@ -132,44 +123,40 @@ export async function GET(req: Request) {
       completedTasks.set(taskId, finalUrl);
 
       return Response.json({
-        status: "completed",
+        status: 'completed',
         videoUrl: finalUrl,
         taskId,
         success: true,
       });
     }
 
-    // Any other status (queued, running, etc.) — treat as still processing
-    console.log("⏳ Task status:", data.status, "(still processing)");
+    console.log('Task status:', data.status, '(still processing)');
     return Response.json({
-      status: "processing",
+      status: 'processing',
       taskId,
       success: true,
     });
   } catch (error: any) {
-    console.error("❌ Status check error:", error);
+    console.error('Status check error:', error);
     return Response.json(
-      { error: error?.message || "Internal Server Error" },
+      { error: error?.message || 'Internal Server Error' },
       { status: 500 }
     );
   }
 }
 
-/**
- * Downloads ephemeral video and uploads to Cloudinary for permanent storage.
- */
 async function persistVideoToCloudinary(videoUrl: string): Promise<string | null> {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const clApiKey = process.env.CLOUDINARY_API_KEY;
   const clApiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !clApiKey || !clApiSecret) {
-    console.warn("⚠️ Cloudinary not configured, returning original URL");
+    console.warn('Cloudinary not configured, returning original URL');
     return null;
   }
 
   try {
-    console.log("🛰️ Downloading avatar video for Cloudinary...");
+    console.log('Downloading avatar video for Cloudinary...');
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) return null;
 
@@ -201,21 +188,21 @@ async function persistVideoToCloudinary(videoUrl: string): Promise<string | null
     formData.append('signature', signature);
     formData.append('resource_type', 'video');
 
-    const clResponse = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
-      { method: 'POST', body: formData }
-    );
+    const clResponse = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
+      method: 'POST',
+      body: formData,
+    });
 
     if (!clResponse.ok) {
-      console.error("❌ Cloudinary video upload failed:", await clResponse.text());
+      console.error('Cloudinary video upload failed:', await clResponse.text());
       return null;
     }
 
     const clData = await clResponse.json();
-    console.log("✨ Avatar video saved permanently:", clData.secure_url);
+    console.log('Avatar video saved permanently:', clData.secure_url);
     return clData.secure_url;
   } catch (err: any) {
-    console.error("❌ Video persistence error:", err?.message);
+    console.error('Video persistence error:', err?.message);
     return null;
   }
 }

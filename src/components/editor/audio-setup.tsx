@@ -93,8 +93,6 @@ export function AudioSetup({
         const errorData = await voiceRes.json().catch(() => ({ error: 'Connection failed' }));
         const errorMessage = errorData.error || `Error ${voiceRes.status}`;
         
-        console.error(`ElevenLabs Voice Error [${voiceRes.status}]:`, errorMessage);
-        
         if (voiceRes.status === 401) {
           failedKeysRef.current.add(keyToUse);
         }
@@ -116,9 +114,7 @@ export function AudioSetup({
           const userData = await userRes.json();
           setSubInfo(userData);
         }
-      } catch (userErr) {
-        console.warn('Could not fetch ElevenLabs subscription info:', userErr);
-      }
+      } catch {}
 
       // Only save to DB if this was a MANUAL keyboard entry from the user
       if (!targetKey && keyToUse !== settings.audio?.elevenLabsApiKey) {
@@ -140,7 +136,6 @@ export function AudioSetup({
         toast.success('Connected to ElevenLabs!');
       }
     } catch (err: any) {
-      console.error('handleConnect failed:', err);
       activeConnectionRef.current = null;
       setConnected(false);
       
@@ -199,7 +194,6 @@ export function AudioSetup({
                 retries++;
                 continue;
               }
-              console.warn(`TTS failed for ${slide.id}:`, err.error || response.statusText);
               failed++;
               break;
             }

@@ -397,7 +397,6 @@ export function SlideEditPanel({
         toast.info('AI chose minimal emphasis for this slide');
       }
     } catch (error) {
-      console.error('AI word styling error:', error);
       toast.error('Failed to style words with AI');
     } finally {
       setAiStylingWords(false);
@@ -481,7 +480,6 @@ export function SlideEditPanel({
         toast.success('Infographic created!');
       }
     } catch (error) {
-      console.error('Failed to fetch infographic content:', error);
       // Keep the basic infographic setup even on error
       toast.error('Could not auto-generate infographic. You can edit manually.');
     }

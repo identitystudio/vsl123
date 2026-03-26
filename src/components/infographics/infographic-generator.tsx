@@ -94,14 +94,11 @@ export function InfographicGenerator({
 
   const saveInfographics = async (promptText: string, imageArray: InfographicImage[]) => {
     if (!projectId) {
-      console.warn('No projectId provided, skipping save');
       return;
     }
 
     setSaving(true);
     try {
-      console.log('Saving infographics:', { projectId, promptText, imageCount: imageArray.length });
-      
       const response = await fetch('/api/save-infographics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -119,12 +116,10 @@ export function InfographicGenerator({
         throw new Error(errorMsg);
       }
 
-      console.log('Save successful:', responseData);
       toast.success('Infographics saved to project');
       return responseData;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save infographics';
-      console.error('Save error:', message);
       toast.error(message);
     } finally {
       setSaving(false);
@@ -159,7 +154,6 @@ export function InfographicGenerator({
   const handleGenerateVideo = async (image: InfographicImage) => {
     setGeneratingVideos((prev) => ({ ...prev, [image.asset_id]: true }));
     try {
-      console.log('Starting video generation for:', image.display_name);
       const effectiveVideoPrompt = (videoPrompt || prompt || 'Create a video based on this image').trim();
       
       const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
@@ -188,7 +182,6 @@ export function InfographicGenerator({
       toast.success('Video generated! Ready to download');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate video';
-      console.error('Video generation error:', message);
       toast.error(message);
     } finally {
       setGeneratingVideos((prev) => ({ ...prev, [image.asset_id]: false }));

@@ -187,7 +187,6 @@ export function useUpdateSingleSlide() {
       if (error) {
         // Fallback: if RPC doesn't exist yet, use the old fetch-merge-save approach
         if (error.code === '42883' || error.message?.includes('function') || error.message?.includes('does not exist')) {
-          console.warn('merge_slide_data RPC not found, using fallback');
           const { data: current, error: getError } = await supabase
             .from('slides')
             .select('data, project_id')
@@ -196,7 +195,6 @@ export function useUpdateSingleSlide() {
           
           if (getError) throw getError;
           if (!current) {
-            console.warn(`Slide ${slideId} not found, skipping update`);
             return null;
           }
 

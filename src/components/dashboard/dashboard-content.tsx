@@ -3,7 +3,6 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +14,11 @@ interface DashboardContentProps {
   email: string;
   userId: string;
 }
+
+const dashboardDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+});
 
 export function DashboardContent({ email, userId }: DashboardContentProps) {
   const router = useRouter();
@@ -224,7 +228,7 @@ export function DashboardContent({ email, userId }: DashboardContentProps) {
                     </>
                   )}
                   <span className="text-xs text-gray-400">
-                    {format(new Date(project.updated_at), 'MMM d')}
+                    {dashboardDateFormatter.format(new Date(project.updated_at))}
                   </span>
                 </div>
 

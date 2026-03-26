@@ -116,7 +116,6 @@ export function EmotionalBeatsSidebar({
 
       toast.success(`Found ${data.beats.length} emotional beats!`);
     } catch (error: any) {
-      console.error('Analyze script error:', error);
       toast.error(error.message || 'Failed to analyze script');
     } finally {
       setIsAnalyzing(false);
