@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { generateImageToVideo } from '@/lib/image-to-video-client';
+import { showErrorToast } from '@/lib/toast-utils';
 import { toast } from 'sonner';
 
 interface InfographicImage {
@@ -172,18 +174,15 @@ export function InfographicsPanel({
     try {
       const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
       const effectivePrompt = (videoPrompt || prompt || 'Create a video based on this image').trim();
-      const response = await fetch('/api/image-to-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: image.secure_url, prompt: effectivePrompt, apiKey: apiKey }),
+      const videoUri = await generateImageToVideo({
+        imageUrl: image.secure_url,
+        prompt: effectivePrompt,
+        apiKey,
       });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to generate video');
 
       const newVideos = {
         ...generatedVideos,
-        [image.asset_id]: { uri: data.videoUri },
+        [image.asset_id]: { uri: videoUri },
       };
       setGeneratedVideos(newVideos);
       toast.success('Video generated!');
@@ -194,7 +193,7 @@ export function InfographicsPanel({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate video';
-      toast.error(message);
+      showErrorToast(message);
     } finally {
       setGeneratingVideos((prev) => ({ ...prev, [image.asset_id]: false }));
     }

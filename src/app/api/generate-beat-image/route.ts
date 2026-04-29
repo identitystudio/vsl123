@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getThemeConfig, type ImageTheme } from '@/lib/image-themes';
 
+function isValidGeneratedImageUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const cloudinaryUploadBase = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/?$/i;
+    return !cloudinaryUploadBase.test(parsed.toString());
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { prompt, theme = 'realism', apiKey } = await request.json();
@@ -49,6 +59,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'No image URL returned from webhook' },
         { status: 500 }
+      );
+    }
+
+    if (!isValidGeneratedImageUrl(imageUrl)) {
+      console.error('Invalid image URL returned from webhook:', imageUrl);
+      return NextResponse.json(
+        { error: 'Webhook returned an incomplete image URL. Please try again.' },
+        { status: 502 }
       );
     }
 

@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useUpdateProject } from '@/hooks/use-project';
+import { generateImageToVideo } from '@/lib/image-to-video-client';
+import { showErrorToast } from '@/lib/toast-utils';
 import type { Slide, ImageGenerationTheme } from '@/types';
 
 interface EmotionalBeat {
@@ -42,6 +44,18 @@ interface EmotionalBeatsSidebarProps {
   currentSlideIndex: number;
   onApplyToSlide: (url: string, type: 'image' | 'video', slideIds: string[]) => void;
   onGoToSlide: (slideId: string) => void;
+}
+
+function isUsableGeneratedImageUrl(url?: string) {
+  if (!url) return false;
+
+  try {
+    const parsed = new URL(url);
+    const cloudinaryUploadBase = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/?$/i;
+    return !cloudinaryUploadBase.test(parsed.toString());
+  } catch {
+    return false;
+  }
 }
 
 export function EmotionalBeatsSidebar({
@@ -139,9 +153,14 @@ export function EmotionalBeatsSidebar({
           body: JSON.stringify({ prompt: beat.visualPrompt, theme: selectedTheme, apiKey: currentApiKey }),
         });
 
-        if (!res.ok) throw new Error('Image generation failed');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Image generation failed');
+        }
         const data = await res.json();
-        if (!data.imageUrl) throw new Error('No image returned');
+        if (!isUsableGeneratedImageUrl(data.imageUrl)) {
+          throw new Error('Image generation returned an invalid image URL');
+        }
 
         const updatedBeats = emotionalBeats.map((b, i) =>
           i === index ? { ...b, imageUrl: data.imageUrl } : b
@@ -154,7 +173,7 @@ export function EmotionalBeatsSidebar({
 
         toast.success(`Image generated for "${beat.name}"`);
       } catch (error: any) {
-        toast.error('Failed to generate image');
+        toast.error(error.message || 'Failed to generate image');
       } finally {
         setGeneratingImage((prev) => ({ ...prev, [index]: false }));
       }
@@ -166,31 +185,23 @@ export function EmotionalBeatsSidebar({
   const handleGenerateVideo = useCallback(
     async (index: number) => {
       const beat = emotionalBeats[index];
-      if (!beat || !beat.imageUrl) return;
+      if (!beat) return;
+      if (!isUsableGeneratedImageUrl(beat.imageUrl)) {
+        toast.error('Generate a valid image for this beat before creating a video.');
+        return;
+      }
 
       setGeneratingVideo((prev) => ({ ...prev, [index]: true }));
       toast.info(`Generating video for "${beat.name}"...`);
 
       try {
         const currentApiKey = apiKey || localStorage.getItem('vsl123-webhook-api-key') || '';
-        const res = await fetch('/api/image-to-video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageUrl: beat.imageUrl,
-            prompt: beat.videoPrompt,
-            theme: selectedTheme,
-            apiKey: currentApiKey,
-          }),
+        const videoUrl = await generateImageToVideo({
+          imageUrl: beat.imageUrl!,
+          prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
+          theme: selectedTheme,
+          apiKey: currentApiKey,
         });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'Video generation failed');
-        }
-        const data = await res.json();
-        const videoUrl = data.videoUri;
-        if (!videoUrl) throw new Error('No video returned');
 
         const updatedBeats = emotionalBeats.map((b, i) =>
           i === index ? { ...b, videoUrl } : b
@@ -203,7 +214,7 @@ export function EmotionalBeatsSidebar({
 
         toast.success(`Video generated for "${beat.name}"`);
       } catch (error: any) {
-        toast.error(error.message || 'Failed to generate video');
+        showErrorToast(error.message || 'Failed to generate video');
       } finally {
         setGeneratingVideo((prev) => ({ ...prev, [index]: false }));
       }

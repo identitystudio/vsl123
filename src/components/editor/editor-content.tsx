@@ -26,6 +26,8 @@ const EmotionalBeatsSidebar = dynamic(() => import('./emotional-beats-sidebar').
 });
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { generateImageToVideo } from '@/lib/image-to-video-client';
+import { showErrorToast } from '@/lib/toast-utils';
 import type { EditorStep, Slide, ImageGenerationTheme } from '@/types';
 import { toast } from 'sonner';
 
@@ -58,6 +60,21 @@ interface EditorContentProps {
 
 const AUTO_BEAT_IMAGE_DELAY_MS = 2500;
 const AUTO_BEAT_VIDEO_DELAY_MS = 12000;
+
+function isUsableGeneratedImageUrl(url?: string) {
+  if (!url) return false;
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'res.cloudinary.com') return true;
+
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const uploadIndex = parts.indexOf('upload');
+    return !(uploadIndex >= 0 && uploadIndex === parts.length - 1);
+  } catch {
+    return false;
+  }
+}
 
 export function EditorContent({ projectId }: EditorContentProps) {
   const router = useRouter();
@@ -363,7 +380,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
               }
 
               const imageData = await imageResponse.json();
-              if (imageData?.imageUrl) {
+              if (isUsableGeneratedImageUrl(imageData?.imageUrl)) {
                 beat.imageUrl = imageData.imageUrl;
                 // Apply image to the first slide of the beat immediately for visual feedback
                 if (Array.isArray(beat.slideIds) && beat.slideIds.length > 0) {
@@ -385,29 +402,18 @@ export function EditorContent({ projectId }: EditorContentProps) {
           const beatsWithVideos = beats.map((b) => ({ ...b }));
           for (let i = 0; i < beatsWithVideos.length; i += 1) {
             const beat = beatsWithVideos[i];
-            if (!beat?.imageUrl) continue;
+            if (!isUsableGeneratedImageUrl(beat?.imageUrl)) continue;
 
             await sleep(AUTO_BEAT_VIDEO_DELAY_MS);
 
             try {
               const apiKey = localStorage.getItem('vsl123-webhook-api-key') || '';
-              const videoResponse = await fetch('/api/image-to-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  imageUrl: beat.imageUrl,
-                  prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
-                  theme,
-                  apiKey: apiKey,
-                }),
-              });
-
-              const videoData = await videoResponse.json().catch(() => ({}));
-              if (!videoResponse.ok) {
-                continue;
-              }
-
-              const videoUrl = videoData.videoUri;
+              const videoUrl = await generateImageToVideo({
+                imageUrl: beat.imageUrl,
+                prompt: beat.videoPrompt || 'Cinematic slow camera movement with subtle motion',
+                theme,
+                apiKey,
+              }).catch(() => '');
 
               if (!videoUrl) continue;
               beat.videoUrl = videoUrl;
@@ -441,7 +447,7 @@ export function EditorContent({ projectId }: EditorContentProps) {
             message = err;
           }
           
-          toast.error(message);
+          showErrorToast(message);
         } finally {
           autoPipelineRunningRef.current = false;
           setAutoPipelineLoading(false);

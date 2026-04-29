@@ -1,89 +1,139 @@
-import crypto from 'crypto';
-import { getThemeConfig, type ImageTheme } from "@/lib/image-themes";
+import { getThemeConfig, type ImageTheme } from '@/lib/image-themes';
+import { PIAPI_BASE, extractPiApiVideoUrl, getPiApiFailureMessage, persistVideoToCloudinary } from '@/lib/piapi-video';
+
+function isIncompleteCloudinaryImageUrl(url: string) {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.hostname !== 'res.cloudinary.com') return false;
+
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const uploadIndex = parts.indexOf('upload');
+    return uploadIndex >= 0 && uploadIndex === parts.length - 1;
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(req: Request) {
   try {
     const { imageUrl, prompt, theme = 'realism', apiKey } = await req.json();
-    console.log("🎬 Video Generation Request (webhook):", { imageUrl: imageUrl?.substring(0, 50), prompt, theme });
+    const normalizedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : imageUrl;
 
-    if (!imageUrl || !prompt) {
-      return Response.json(
-        { error: "Missing imageUrl or prompt" },
-        { status: 400 }
-      );
+    console.log('🎬 PiAPI video request:', {
+      imageUrl: normalizedImageUrl,
+      prompt,
+      theme,
+    });
+
+    if (!normalizedImageUrl || !prompt) {
+      return Response.json({ error: 'Missing imageUrl or prompt' }, { status: 400 });
     }
 
     if (!apiKey) {
-      console.warn("⚠️ Webhook API key not provided");
       return Response.json(
-        { error: "PI API key is missing. Please enter it in the theme selection options." },
+        { error: 'PiAPI key is missing. Please enter it in the theme selection options.' },
         { status: 400 }
       );
     }
 
-    console.log("🚀 Starting webhook video generation...");
+    let parsedImageUrl: URL;
+    try {
+      parsedImageUrl = new URL(normalizedImageUrl);
+    } catch {
+      return Response.json({ error: 'Invalid image URL.' }, { status: 400 });
+    }
+
+    if (isIncompleteCloudinaryImageUrl(parsedImageUrl.toString())) {
+      return Response.json(
+        { error: 'Image URL is incomplete. Generate or upload an actual image before creating a video.' },
+        { status: 400 }
+      );
+    }
 
     const themeConfig = getThemeConfig(theme as ImageTheme);
     const enhancedPrompt = `${prompt}. ${themeConfig.videoPromptModifier}`;
 
-    const webhookUrl = "https://themacularprogram.app.n8n.cloud/webhook/video-generation";
-    
-    const response = await fetch(webhookUrl, {
-      method: "POST",
+    const response = await fetch(PIAPI_BASE, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
       },
       body: JSON.stringify({
-        api_key: apiKey,
-        prompt: enhancedPrompt,
-        image_url: imageUrl,
+        model: 'veo3',
+        task_type: 'veo3-video-fast',
+        input: {
+          prompt: enhancedPrompt,
+          image_url: normalizedImageUrl,
+          aspect_ratio: 'auto',
+          duration: '8s',
+          resolution: '720p',
+          generate_audio: false,
+        },
+        config: {
+          service_mode: 'public',
+        },
       }),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("❌ Webhook HTTP error:", response.status, text);
+      let errorMessage = `PiAPI request failed: ${response.statusText}`;
+
+      try {
+        const parsed = JSON.parse(text);
+        errorMessage =
+          getPiApiFailureMessage(parsed?.data?.error) ||
+          parsed?.message ||
+          errorMessage;
+      } catch {
+        // Fall back to raw status text when PiAPI does not return JSON.
+      }
+
+      console.error('PiAPI video submit failed:', response.status, text);
       return Response.json(
-        { error: `Webhook failed: ${response.statusText}` },
-        { status: response.status }
+        { error: errorMessage },
+        { status: response.status === 500 ? 402 : response.status }
       );
     }
 
-    const data = await response.json();
-    
-    // Webhook should return an array with one object
-    if (!Array.isArray(data) || data.length === 0) {
-      console.error("❌ Invalid webhook response format:", data);
-      return Response.json(
-        { error: "Invalid response from webhook." },
-        { status: 500 }
-      );
+    const result = await response.json();
+    if (result.code !== 200 || !result.data?.task_id) {
+      const errorMsg = getPiApiFailureMessage(result.data?.error) || result.message || 'Failed to submit video task';
+      console.error('PiAPI video submission error:', errorMsg);
+      return Response.json({ error: errorMsg }, { status: 400 });
     }
 
-    const result = data[0];
+    const data = result.data;
+    const normalizedStatus = String(data.status || '').toLowerCase();
 
-    // The new webhook response is a Cloudinary asset object
-    const videoUri = result.secure_url || result.url;
-    
-    if (!videoUri) {
-      console.error("❌ No video URI in webhook response:", result);
-      return Response.json(
-        { error: "Generation complete but no video URL found in response." },
-        { status: 500 }
-      );
+    if (normalizedStatus === 'completed') {
+      const rawVideoUrl = extractPiApiVideoUrl(data);
+      if (!rawVideoUrl) {
+        return Response.json(
+          { error: 'Generation completed but no video URL was returned.' },
+          { status: 500 }
+        );
+      }
+
+      const permanentUrl = await persistVideoToCloudinary(rawVideoUrl);
+      return Response.json({
+        status: 'completed',
+        taskId: data.task_id,
+        videoUri: permanentUrl || rawVideoUrl,
+        success: true,
+      });
     }
 
-    console.log("✅ Webhook video generated, URI:", videoUri);
-
-    // Return the URL provided by the n8n webhook directly (since it handles Cloudinary upload)
     return Response.json({
-      videoUri,
+      status: normalizedStatus || 'pending',
+      taskId: data.task_id,
       success: true,
     });
   } catch (error: any) {
-    console.error("❌ CRITICAL Image-to-Video failure:", error);
+    console.error('❌ CRITICAL Image-to-Video failure:', error);
     return Response.json(
-      { error: error?.message || "Internal Server Error" },
+      { error: error?.message || 'Internal Server Error' },
       { status: 500 }
     );
   }

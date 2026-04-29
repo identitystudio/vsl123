@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   Heart,
   Video,
+  Image as ImageIcon,
   User,
   Save,
   Mic,
@@ -21,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { Slider } from '@/components/ui/slider';
 import { SlidePreview } from './slide-preview';
 import { AiImageDialog } from './ai-image-dialog';
@@ -248,6 +250,68 @@ async function getSmartKeyword(slideText: string, emotion?: string, sceneTitle?:
   }
 }
 
+async function uploadFileToCloudinaryWithProgress(
+  file: File,
+  folder: string,
+  resourceType: 'image' | 'video',
+  onProgress: (value: number) => void
+): Promise<{ url: string; publicId?: string; width?: number; height?: number }> {
+  const signatureResponse = await fetch('/api/cloudinary-signature', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder, resourceType }),
+  });
+
+  const signatureData = await signatureResponse.json().catch(() => ({}));
+  if (!signatureResponse.ok) {
+    throw new Error(signatureData.error || 'Failed to prepare Cloudinary upload');
+  }
+
+  const uploadFormData = new FormData();
+  uploadFormData.append('file', file);
+  uploadFormData.append('api_key', signatureData.apiKey);
+  uploadFormData.append('folder', signatureData.folder);
+  uploadFormData.append('public_id', signatureData.publicId);
+  uploadFormData.append('timestamp', String(signatureData.timestamp));
+  uploadFormData.append('signature', signatureData.signature);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', signatureData.uploadUrl);
+    xhr.responseType = 'json';
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.onabort = () => reject(new Error('Upload cancelled'));
+    xhr.onload = () => {
+      const response = xhr.response;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(100);
+        resolve({
+          url: response.secure_url,
+          publicId: response.public_id,
+          width: response.width,
+          height: response.height,
+        });
+        return;
+      }
+
+      const message =
+        response?.error?.message ||
+        response?.error ||
+        (typeof xhr.responseText === 'string' && xhr.responseText) ||
+        'Upload failed';
+      reject(new Error(message));
+    };
+
+    xhr.send(uploadFormData);
+  });
+}
+
 export function SlideEditPanel({
   slide,
   onUpdate,
@@ -283,6 +347,8 @@ export function SlideEditPanel({
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiStylingWords, setAiStylingWords] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bgImageUploadProgress, setBgImageUploadProgress] = useState<number | null>(null);
+  const [bgVideoUploadProgress, setBgVideoUploadProgress] = useState<number | null>(null);
   const [showTransitionSlideSelector, setShowTransitionSlideSelector] = useState(false);
   const [activeTab, setActiveTab] = useState<'text' | 'media' | 'avatar'>('text');
   const localHeadshotRef = useRef<HTMLInputElement>(null);
@@ -407,6 +473,7 @@ export function SlideEditPanel({
   const headshotRef = headshotInputRef || localHeadshotRef;
   const headshotVideoInputRef = useRef<HTMLInputElement>(null);
   const bgImageUploadRef = useRef<HTMLInputElement>(null);
+  const bgVideoUploadRef = useRef<HTMLInputElement>(null);
 
   const handleHeadshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -481,18 +548,19 @@ export function SlideEditPanel({
     }
 
     const uploadToast = toast.loading('Uploading background image...');
+    setBgImageUploadProgress(0);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'vsl123-backgrounds');
-
-      const res = await fetch('/api/upload-image', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
+      const data = await uploadFileToCloudinaryWithProgress(
+        file,
+        'vsl123-backgrounds',
+        'image',
+        setBgImageUploadProgress
+      );
 
       onUpdate({
         ...slide,
         hasBackgroundImage: true,
+        backgroundVideoUrl: undefined,
         backgroundImage: {
           ...(slide.backgroundImage || { opacity: 40, blur: 8, displayMode: 'blurred' }),
           url: data.url,
@@ -506,6 +574,46 @@ export function SlideEditPanel({
       toast.success('Background image uploaded!', { id: uploadToast });
     } catch (err: any) {
       toast.error(err.message || 'Background upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    } finally {
+      setBgImageUploadProgress(null);
+    }
+    e.target.value = '';
+  };
+
+  const handleBgVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) {
+      toast.error('Please select a video file');
+      return;
+    }
+
+    const uploadToast = toast.loading('Uploading background video...');
+    setBgVideoUploadProgress(0);
+    try {
+      const data = await uploadFileToCloudinaryWithProgress(
+        file,
+        'vsl123-background-videos',
+        'video',
+        setBgVideoUploadProgress
+      );
+
+      onUpdate({
+        ...slide,
+        hasBackgroundImage: false,
+        backgroundImage: undefined,
+        backgroundVideoUrl: data.url,
+        style: {
+          ...slide.style,
+          background: 'video',
+          textColor: 'white',
+        },
+      });
+      toast.success('Background video uploaded!', { id: uploadToast });
+    } catch (err: any) {
+      toast.error(err.message || 'Background video upload failed. Please check Cloudinary configuration.', { id: uploadToast });
+    } finally {
+      setBgVideoUploadProgress(null);
     }
     e.target.value = '';
   };
@@ -1687,6 +1795,88 @@ export function SlideEditPanel({
           {/* TAB CONTENT: MEDIA */}
           <div className={activeTab === 'media' ? 'block space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
 
+          {(bgImageUploadProgress !== null || bgVideoUploadProgress !== null) && (
+            <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                    <span>
+                    {bgVideoUploadProgress !== null
+                      ? 'Uploading background video to Cloudinary'
+                      : 'Uploading background image to Cloudinary'}
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-gray-500">
+                  {bgVideoUploadProgress ?? bgImageUploadProgress}%
+                </span>
+              </div>
+              <Progress
+                value={bgVideoUploadProgress ?? bgImageUploadProgress ?? 0}
+                className="h-2 bg-gray-200"
+              />
+            </div>
+          )}
+
+          {/* Background Video Controls */}
+          {slide.backgroundVideoUrl && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Video className="w-4 h-4" />
+                  <span className="font-semibold text-sm">Background Video</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:text-red-600 gap-1"
+                  onClick={() =>
+                    onUpdate({
+                      ...slide,
+                      backgroundVideoUrl: undefined,
+                      style: {
+                        ...slide.style,
+                        background: slide.hasBackgroundImage ? 'image' : 'white',
+                        textColor: slide.hasBackgroundImage ? 'white' : 'black',
+                      },
+                    })
+                  }
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove
+                </Button>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
+                <video
+                  src={slide.backgroundVideoUrl}
+                  controls
+                  className="w-full max-h-48 object-cover"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => bgVideoUploadRef.current?.click()}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Change Video
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => bgImageUploadRef.current?.click()}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Switch to Image
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Background Image Controls */}
           {slide.hasBackgroundImage && (
             <div>
@@ -1825,11 +2015,11 @@ export function SlideEditPanel({
 
               {/* Action buttons */}
               <div className="space-y-3">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5"
+                    className="justify-start gap-1.5 sm:justify-center"
                     onClick={() => setShowImageSearch(true)}
                   >
                     <Search className="w-3.5 h-3.5" />
@@ -1838,7 +2028,7 @@ export function SlideEditPanel({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5"
+                    className="justify-start gap-1.5 sm:justify-center"
                     onClick={() => setAiImageOpen(true)}
                   >
                     <Sparkles className="w-3.5 h-3.5" />
@@ -1847,16 +2037,25 @@ export function SlideEditPanel({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1"
+                    className="justify-start gap-1 sm:justify-center"
                     onClick={() => bgImageUploadRef.current?.click()}
                   >
                     <Upload className="w-3.5 h-3.5" />
                     Upload
                   </Button>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    className="justify-start gap-1 sm:justify-center"
+                    onClick={() => bgVideoUploadRef.current?.click()}
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    Upload Video
+                  </Button>
+                  <Button
                     variant={showAiPrompt ? "secondary" : "ghost"}
                     size="sm"
-                    className="gap-1.5 ml-auto"
+                    className="justify-start gap-1.5 sm:col-span-2 sm:justify-center"
                     onClick={() => setShowAiPrompt(!showAiPrompt)}
                   >
                     <Pencil className="w-3.5 h-3.5" />
@@ -1908,18 +2107,42 @@ export function SlideEditPanel({
             </div>
           )}
 
-          {/* Generate AI Image (when no background image) */}
-          {!slide.hasBackgroundImage && (
-            <div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setAiImageOpen(true)}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Generate AI Image
-              </Button>
+          {/* Add Background Media */}
+          {!slide.hasBackgroundImage && !slide.backgroundVideoUrl && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span>&#x1F5BC;</span>
+                <span className="font-semibold text-sm">Background Media</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-1.5"
+                  onClick={() => setAiImageOpen(true)}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generate AI Image
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-1.5"
+                  onClick={() => bgImageUploadRef.current?.click()}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Upload Image
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-1.5"
+                  onClick={() => bgVideoUploadRef.current?.click()}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  Upload Video
+                </Button>
+              </div>
             </div>
           )}
 
@@ -1948,6 +2171,15 @@ export function SlideEditPanel({
             accept="image/*"
             className="hidden"
             onChange={handleBgImageUpload}
+          />
+
+          {/* Hidden background video file input */}
+          <input
+            ref={bgVideoUploadRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleBgVideoUpload}
           />
 
           {/* Hidden avatar image file input */}

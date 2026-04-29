@@ -126,3 +126,13 @@
     font-family: var(--font-geist-sans);
   }
 }
+
+.insufficient-credits-toast {
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
+}
+
+.insufficient-credits-toast [data-title] {
+  color: #b91c1c !important;
+}
