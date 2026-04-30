@@ -1,0 +1,520 @@
+const express = require('express');
+const puppeteer = require('puppeteer');
+const fs = require('fs-extra');
+const path = require('path');
+const { exec } = require('child_process');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json({ limit: '900mb' }));
+app.use(cors());
+
+const PORT = 3001;
+const jobs = new Map();
+
+app.use('/outputs', express.static(path.join(__dirname, 'outputs')));
+fs.ensureDirSync(path.join(__dirname, 'outputs'));
+fs.ensureDirSync(path.join(__dirname, 'temp'));
+
+// -------------------------
+// UTILITIES
+// -------------------------
+
+const runCmd = (cmd) => new Promise((resolve, reject) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr || error.message));
+        else resolve(stdout);
+    });
+});
+
+const getAudioDuration = async (file) => {
+    const out = await runCmd(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${file}"`
+    );
+    return parseFloat(out.trim());
+};
+
+const getVideoDuration = async (file) => {
+    const out = await runCmd(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${file}"`
+    );
+    return parseFloat(out.trim());
+};
+
+// -------------------------
+// DOWNLOAD BACKGROUND VIDEO FROM CLOUDINARY
+// -------------------------
+
+const downloadBackgroundVideo = async (urlOrPath, destPath) => {
+    if (!urlOrPath) return null;
+    
+    try {
+        if (urlOrPath.startsWith('http')) {
+            await runCmd(`curl -s -L -o "${destPath}" "${urlOrPath}"`);
+        } else if (urlOrPath.startsWith('data:')) {
+            const base64 = urlOrPath.split(',')[1];
+            await fs.writeFile(destPath, base64, 'base64');
+        } else {
+            await fs.copy(urlOrPath, destPath);
+        }
+        return destPath;
+    } catch (error) {
+        console.error(`Failed to download background video: ${error.message}`);
+        return null;
+    }
+};
+
+// -------------------------
+// RENDER SLIDES + AUDIO + VIDEO BACKGROUND
+// -------------------------
+
+async function renderSlides(slides, framesDir, audioDir, videoDir, updateJob) {
+    const AUDIO_CONCURRENCY = 12;
+    const VIDEO_CONCURRENCY = 3;
+    const TAB_CONCURRENCY = 4;
+
+    updateJob({ status: 'downloading_assets', progress: 5 });
+
+    for (let i = 0; i < slides.length; i += Math.max(AUDIO_CONCURRENCY, VIDEO_CONCURRENCY)) {
+        const batch = slides.slice(i, i + Math.max(AUDIO_CONCURRENCY, VIDEO_CONCURRENCY));
+        
+        await Promise.all(batch.map(async (slide, idx) => {
+            const id = i + idx;
+            const idStr = String(id).padStart(3, '0');
+
+            if (slide.audioUrl) {
+                const dest = path.join(audioDir, `audio_${idStr}.mp3`);
+                try {
+                    if (slide.audioUrl.startsWith('data:')) {
+                        await fs.writeFile(dest, slide.audioUrl.split(',')[1], 'base64');
+                    } else {
+                        await runCmd(`curl -s -L -o "${dest}" "${slide.audioUrl}"`);
+                    }
+                } catch (e) {
+                    console.error(`Audio ${idStr} failed:`, e.message);
+                }
+            }
+
+            if (slide.backgroundVideoUrl) {
+                const dest = path.join(videoDir, `bg_video_${idStr}.mp4`);
+                try {
+                    const result = await downloadBackgroundVideo(slide.backgroundVideoUrl, dest);
+                    if (result) console.log(`? Downloaded background video for slide ${idStr}`);
+                } catch (e) {
+                    console.error(`Background video ${idStr} failed:`, e.message);
+                }
+            }
+
+            if (slide.talkingHeadVideoUrl) {
+                const dest = path.join(videoDir, `th_video_${idStr}.mp4`);
+                try {
+                    const result = await downloadBackgroundVideo(slide.talkingHeadVideoUrl, dest);
+                    if (result) console.log(`? Downloaded talking head video for slide ${idStr}`);
+                } catch (e) {
+                    console.error(`Talking head video ${idStr} failed:`, e.message);
+                }
+            }
+        }));
+    }
+
+    updateJob({ status: 'rendering_slides', progress: 15 });
+
+    const BROWSER_BATCH = 20;
+
+    for (let i = 0; i < slides.length; i += BROWSER_BATCH) {
+        const chunk = slides.slice(i, i + BROWSER_BATCH);
+
+        const browser = await puppeteer.launch({
+            protocolTimeout: 300000,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--window-size=1920,1080'
+            ]
+        });
+
+        try {
+            for (let j = 0; j < chunk.length; j += TAB_CONCURRENCY) {
+                const tabs = chunk.slice(j, j + TAB_CONCURRENCY);
+
+                await Promise.all(tabs.map(async (slide, tIdx) => {
+                    const globalIdx = i + j + tIdx;
+                    const id = String(globalIdx).padStart(3, '0');
+                    const filePath = path.join(framesDir, `slide_${id}.png`);
+                    const hasVideoBackground = (slide.backgroundVideoUrl && slide.backgroundVideoUrl.trim()) || (slide.backgroundVideo && slide.backgroundVideo.trim());
+
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        const page = await browser.newPage();
+                        try {
+                            await page.setViewport({ width: 1920, height: 1080 });
+
+                            const transparentBgCSS = hasVideoBackground ? `
+                                *, *::before, *::after { background: transparent !important; background-color: transparent !important; background-image: none !important; }
+                                html, body, div, section, article, main, header, footer, aside, nav { background: transparent !important; background-color: transparent !important; }
+                                [class*="bg-"] { background: transparent !important; background-color: transparent !important; }
+                                [style] { background: transparent !important; background-color: transparent !important; background-image: none !important; }
+                            ` : '';
+                            
+                            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script><style>body{margin:0;padding:0;overflow:hidden;background:transparent;}${transparentBgCSS}</style></head><body>${slide.htmlContent}</body></html>`;
+
+                            try {
+                                await page.setContent(html, { waitUntil: 'networkidle2', timeout: 30000 });
+                            } catch (timeoutErr) {
+                                console.warn(`[${id}] Page load timeout, proceeding to screenshot anyway...`);
+                            }
+                            await new Promise(r => setTimeout(r, 800));
+                            
+                            if (hasVideoBackground) {
+                                await page.evaluate(() => {
+                                    const allElements = document.querySelectorAll('*');
+                                    allElements.forEach(el => {
+                                        if (el instanceof HTMLElement) {
+                                            el.style.setProperty('background', 'transparent', 'important');
+                                            el.style.setProperty('background-color', 'transparent', 'important');
+                                            el.style.setProperty('background-image', 'none', 'important');
+                                        }
+                                    });
+                                });
+                            }
+
+                            await page.screenshot({ path: filePath, timeout: 30000, omitBackground: true });
+
+                            if (await fs.pathExists(filePath)) {
+                                if (hasVideoBackground) {
+                                    try {
+                                        const idStr = String(globalIdx).padStart(3, '0');
+                                        const bgColorResult = await runCmd(`/usr/bin/convert "${filePath}" -format "%[pixel:p{0,0}]" info:`);
+                                        const bgColorDetected = bgColorResult.trim();
+                                        await runCmd(`/usr/bin/convert "${filePath}" -alpha activate -fuzz 15% -transparent "${bgColorDetected}" "${filePath}"`);
+                                        console.log(`? Made ${bgColorDetected} transparent for slide ${idStr}`);
+                                    } catch (imgErr) {
+                                        console.warn(`ImageMagick conversion error for slide: ${imgErr.message}`);
+                                    }
+                                }
+                                break;
+                            }
+                        } catch (e) {
+                            if (attempt === 3) throw e;
+                        } finally {
+                            await page.close();
+                        }
+                    }
+                }));
+
+                updateJob({ progress: 15 + Math.floor(((i + j) / slides.length) * 55) });
+            }
+        } finally {
+            await browser.close();
+        }
+    }
+}
+
+// -------------------------
+// CREATE VIDEO SEGMENT WITH BACKGROUND VIDEO & FOREGROUND SLIDE
+// -------------------------
+
+const createSegmentWithBackgroundVideo = async (slide, idx, framesDir, audioDir, videoDir, segDir) => {
+    const id = String(idx).padStart(3, '0');
+    const img = path.join(framesDir, `slide_${id}.png`);
+    const bgVideo = path.join(videoDir, `bg_video_${id}.mp4`);
+    const thVideo = path.join(videoDir, `th_video_${id}.mp4`);
+    const mp3 = path.join(audioDir, `audio_${id}.mp3`);
+    const out = path.join(segDir, `seg_${id}.mp4`);
+
+    try {
+        const hasBgVideo = await fs.pathExists(bgVideo);
+        const hasThVideo = await fs.pathExists(thVideo) && slide.talkingHeadAsHeadshot;
+        const hasAudio = await fs.pathExists(mp3);
+
+        let rawDuration = 3;
+        if (hasAudio) {
+            rawDuration = await getAudioDuration(mp3);
+            console.log(`[${id}] Audio duration: ${rawDuration}s (authoritative)`);
+        } else if (hasBgVideo) {
+            rawDuration = await getVideoDuration(bgVideo);
+            console.log(`[${id}] No audio — using bg video duration: ${rawDuration}s`);
+        } else {
+            console.log(`[${id}] No audio or bg video — using default: ${rawDuration}s`);
+        }
+
+        const duration = Math.ceil(rawDuration * 30) / 30;
+
+        console.log(`Processing segment ${id}: hasBgVideo=${hasBgVideo}, hasThVideo=${hasThVideo}, hasAudio=${hasAudio}, rawDur=${rawDuration}s, quantizedDur=${duration}s`);
+
+        const audioFilter = `aresample=async=1:first_pts=0:osr=48000,aformat=channel_layouts=stereo,apad=whole_dur=${duration.toFixed(6)},atrim=0:${duration.toFixed(6)},asetpts=PTS-STARTPTS`;
+
+        const buildCommand = (includeTh) => {
+            let inputs = [];
+            let filterComplex = [];
+            
+            if (hasBgVideo) {
+                inputs.push(`-stream_loop -1 -t ${duration.toFixed(6)} -i "${bgVideo}"`);
+                filterComplex.push(`[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS[bg]`);
+            }
+
+            inputs.push(`-loop 1 -framerate 30 -i "${img}"`);
+            const slideIdx = inputs.length - 1;
+            
+            if (hasBgVideo) {
+                filterComplex.push(`[${slideIdx}:v]scale=1920:1080,setpts=PTS-STARTPTS[fg]`);
+                filterComplex.push(`[bg][fg]overlay=0:0[base]`);
+            } else {
+                filterComplex.push(`[${slideIdx}:v]scale=1920:1080,setpts=PTS-STARTPTS[base]`);
+            }
+
+            if (includeTh) {
+                inputs.push(`-i "${thVideo}"`);
+                const thIdx = inputs.length - 1;
+
+                const scale = 3;
+                const rawSize = (slide.talkingHeadSize || 160) * scale;
+                const size = Math.round(rawSize);
+                const margin = Math.round(24 * scale);
+
+                let x, y;
+                if (typeof slide.talkingHeadX === 'number' && typeof slide.talkingHeadY === 'number' &&
+                    (slide.talkingHeadX > 0 || slide.talkingHeadY > 0)) {
+                    x = Math.round(slide.talkingHeadX);
+                    y = Math.round(slide.talkingHeadY);
+                    console.log(`[${id}] Using frontend-measured TH position: x=${x}, y=${y}, size=${size}`);
+                } else {
+                    switch (slide.talkingHeadPosition) {
+                        case 'top-left':
+                        case 'headshot-bio':
+                            x = margin;
+                            y = margin;
+                            break;
+                        case 'top-right':
+                            x = 1920 - size - margin;
+                            y = margin;
+                            break;
+                        case 'bottom-left':
+                            x = margin;
+                            y = 1080 - size - margin;
+                            break;
+                        case 'bottom-right':
+                        default:
+                            x = 1920 - size - margin;
+                            y = 1080 - size - margin;
+                            break;
+                    }
+                    console.log(`[${id}] Using calculated TH position: x=${x}, y=${y}, size=${size}`);
+                }
+
+                filterComplex.push(`[${thIdx}:v]scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size},format=yuva420p[th_vid]`);
+                filterComplex.push(`color=c=black:s=${size}x${size},format=gray,geq=lum='255*lte(pow(X-(W/2),2)+pow(Y-(H/2),2),pow((W/2)-2,2))'[mask]`);
+                filterComplex.push(`[th_vid][mask]alphamerge[th]`);
+                filterComplex.push(`[base][th]overlay=${x}:${y}[v]`);
+            } else {
+                filterComplex.push(`[base]setpts=PTS-STARTPTS[v]`);
+            }
+
+            if (hasAudio) {
+                inputs.push(`-i "${mp3}"`);
+                const audIdx = inputs.length - 1;
+                filterComplex.push(`[${audIdx}:a]${audioFilter}[a]`);
+            } else {
+                inputs.push(`-f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000`);
+                const audIdx = inputs.length - 1;
+                filterComplex.push(`[${audIdx}:a]${audioFilter}[a]`);
+            }
+
+            return `ffmpeg -y ${inputs.join(' ')} \
+    -filter_complex "${filterComplex.join(';')}" \
+    -map "[v]" -map "[a]" \
+    -t ${duration.toFixed(6)} \
+    -r 30 -fps_mode cfr \
+    -video_track_timescale 90000 \
+    -c:v libx264 -preset ultrafast \
+    -c:a aac -ar 48000 -b:a 192k \
+    -pix_fmt yuv420p \
+    -movflags +faststart \
+    "${out}"`;
+        };
+
+        try {
+            if (hasThVideo) {
+                await runCmd(buildCommand(true));
+                console.log(`? Segment ${id} created with TH (${duration}s)`);
+                return true;
+            }
+        } catch (err) {
+            console.warn(`?? Segment ${id} failed with TH. Retrying without it...`, err.message);
+        }
+
+        await runCmd(buildCommand(false));
+        console.log(`? Segment ${id} created (${duration}s)${hasThVideo ? ' (FALLBACK)' : ''}`);
+        return true;
+
+    } catch (error) {
+        console.error(`? Failed to create segment ${id}:`, error.message);
+        return false;
+    }
+};
+
+// -------------------------
+// CONCAT WITH TRANSITIONS (xfade)
+// -------------------------
+
+const concatWithTransitions = async (segDir, slides, finalPath) => {
+    const segFiles = (await fs.readdir(segDir))
+        .filter(f => f.endsWith('.mp4'))
+        .sort();
+
+    if (segFiles.length === 0) throw new Error('No segments found');
+    if (segFiles.length === 1) {
+        await fs.copy(path.join(segDir, segFiles[0]), finalPath);
+        return;
+    }
+
+    const durations = [];
+    for (const f of segFiles) {
+        const dur = await getVideoDuration(path.join(segDir, f));
+        durations.push(dur);
+        console.log(`Segment ${f}: ${dur}s`);
+    }
+
+    const hasAnyTransition = slides.some((s, i) => i > 0 && s.transition && s.transition !== 'none');
+
+    if (!hasAnyTransition) {
+        const listPath = path.join(segDir, 'list.txt');
+        const list = segFiles.map(f => `file '${f}'`).join('\n');
+        await fs.writeFile(listPath, list);
+        await runCmd(
+            `cd "${segDir}" && ffmpeg -y -f concat -safe 0 -i list.txt -r 30 -fps_mode cfr -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`
+        );
+        return;
+    }
+
+    const inputs = segFiles.map(f => `-i "${path.join(segDir, f)}"`).join(' ');
+    let videoFilter = '';
+    let audioFilter = '';
+    let cumulativeVideoDur = durations[0];
+
+    for (let i = 0; i < segFiles.length - 1; i++) {
+        const nextSlide = slides[i + 1];
+        const transition = (nextSlide && nextSlide.transition && nextSlide.transition !== 'none')
+            ? nextSlide.transition : null;
+
+        const transDur = Math.min((nextSlide && nextSlide.transitionDuration) || 0.5, 0.5);
+
+        const prevVLabel = i === 0 ? `[0:v]` : `[v${i}]`;
+        const nextVLabel = `[${i + 1}:v]`;
+        const outVLabel = i === segFiles.length - 2 ? `[vout]` : `[v${i + 1}]`;
+
+        const prevALabel = i === 0 ? `[0:a]` : `[a${i}]`;
+        const nextALabel = `[${i + 1}:a]`;
+        const outALabel = i === segFiles.length - 2 ? `[aout]` : `[a${i + 1}]`;
+
+        if (transition) {
+            const offset = Math.max(0, cumulativeVideoDur - transDur);
+            videoFilter += `${prevVLabel}${nextVLabel}xfade=transition=${transition}:duration=${transDur}:offset=${offset.toFixed(6)}${outVLabel};`;
+            audioFilter += `${prevALabel}${nextALabel}acrossfade=d=${transDur}:c1=tri:c2=tri${outALabel};`;
+            cumulativeVideoDur = cumulativeVideoDur + durations[i + 1] - transDur;
+        } else {
+            const offset = cumulativeVideoDur;
+            videoFilter += `${prevVLabel}${nextVLabel}xfade=transition=fade:duration=0.01:offset=${offset.toFixed(6)}${outVLabel};`;
+            audioFilter += `${prevALabel}${nextALabel}acrossfade=d=0.01:c1=tri:c2=tri${outALabel};`;
+            cumulativeVideoDur = offset + durations[i + 1];
+        }
+    }
+
+    const filterComplex = `${videoFilter}${audioFilter}`.replace(/;$/, '');
+    const cmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -r 30 -video_track_timescale 90000 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${finalPath}"`;
+
+    console.log('Transition concat command:', cmd.substring(0, 500) + '...');
+    await runCmd(cmd);
+};
+
+// -------------------------
+// MAIN ROUTE
+// -------------------------
+
+app.post(['/render', '/render-zip'], async (req, res) => {
+    const isZip = req.path.includes('zip');
+    const { slides, projectName } = req.body;
+
+    const jobId = `job_${Date.now()}`;
+    res.json({ jobId });
+
+    const updateJob = (upd) => jobs.set(jobId, { ...jobs.get(jobId), ...upd });
+    updateJob({ status: 'starting', progress: 0 });
+
+    const workDir = path.join(__dirname, 'temp', jobId);
+
+    try {
+        const framesDir = path.join(workDir, 'frames');
+        const audioDir = path.join(workDir, 'audio');
+        const videoDir = path.join(workDir, 'videos');
+        const segDir = path.join(workDir, 'segments');
+
+        await Promise.all([
+            fs.ensureDir(framesDir),
+            fs.ensureDir(audioDir),
+            fs.ensureDir(videoDir),
+            fs.ensureDir(segDir)
+        ]);
+
+        await renderSlides(slides, framesDir, audioDir, videoDir, updateJob);
+
+        const safeProjectName = (projectName || 'export')
+            .replace(/[^\w\s]/gi, '')
+            .replace(/\s+/g, '_');
+
+        const finalFilename = `${safeProjectName}_${jobId}.${isZip ? 'zip' : 'mp4'}`;
+        const finalPath = path.join(__dirname, 'outputs', finalFilename);
+
+        if (isZip) {
+            updateJob({ status: 'zipping', progress: 95 });
+            await runCmd(`cd "${workDir}" && zip -r -q "${finalPath}" frames audio videos`);
+        } else {
+            updateJob({ status: 'creating_video', progress: 75 });
+
+            const FFMPEG_CONC = 2;
+
+            for (let i = 0; i < slides.length; i += FFMPEG_CONC) {
+                const batch = slides.slice(i, i + FFMPEG_CONC);
+
+                await Promise.all(batch.map(async (slide, idx) => {
+                    const globalIdx = i + idx;
+                    await createSegmentWithBackgroundVideo(
+                        slide,
+                        globalIdx,
+                        framesDir,
+                        audioDir,
+                        videoDir,
+                        segDir
+                    );
+                }));
+
+                updateJob({ progress: 75 + Math.floor((i / slides.length) * 20) });
+            }
+
+            await concatWithTransitions(segDir, slides, finalPath);
+        }
+
+        updateJob({ status: 'completed', progress: 100, downloadUrl: `/outputs/${finalFilename}` });
+
+        setTimeout(() => fs.remove(workDir).catch(() => {}), 600000);
+
+    } catch (err) {
+        updateJob({ status: 'failed', error: err.message });
+        fs.remove(workDir).catch(() => {});
+    }
+});
+
+// -------------------------
+// STATUS ROUTE
+// -------------------------
+
+app.get('/status/:jobId', (req, res) => {
+    const job = jobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(job);
+});
+
+app.listen(PORT, '0.0.0.0', () =>
+    console.log(`Perfect Sync Server running on ${PORT}`)
+);
